@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Remix: Remix: Remix: Remix: Sovereign: The Living Chronicle",
+  "description": "A live, medieval warlord simulation prioritizing deep strategy, logistics, and atmospheric UI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

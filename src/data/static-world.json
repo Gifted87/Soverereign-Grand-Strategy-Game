@@ -1,0 +1,284 @@
+{
+  "provinces": [
+    {
+      "id": "prov_1",
+      "name": "Valedor",
+      "displayName": "The River Crown of Valedor",
+      "terrain": "RIVER_VALLEY",
+      "biome": "TEMPERATE",
+      "elevation": 120,
+      "fertility": 95,
+      "coords": { "q": 0, "r": 0, "s": 0 },
+      "neighbors": ["prov_2", "prov_5"],
+      "resources": [
+        { "good": "GRAIN", "richness": 100, "discovered": true, "depleted": false }
+      ],
+      "x": 50,
+      "y": 50,
+      "continent": "Aurelia",
+      "description": "The agricultural heart of Aurelia, controlling the main grain river and collecting tolls from upstream settlements."
+    },
+    {
+      "id": "prov_2",
+      "name": "Sarn",
+      "displayName": "The Free City of Sarn",
+      "terrain": "COAST",
+      "biome": "TEMPERATE",
+      "elevation": 10,
+      "fertility": 70,
+      "coords": { "q": 1, "r": -1, "s": 0 },
+      "neighbors": ["prov_1", "prov_4"],
+      "resources": [
+        { "good": "FISH", "richness": 80, "discovered": true, "depleted": false }
+      ],
+      "x": 30,
+      "y": 70,
+      "continent": "Aurelia",
+      "description": "A wealthy port republic, maritime power, and center of banked trade in Aurelia."
+    },
+    {
+      "id": "prov_3",
+      "name": "High Marches",
+      "displayName": "The High Marches",
+      "terrain": "MOUNTAINS",
+      "biome": "TEMPERATE",
+      "elevation": 850,
+      "fertility": 25,
+      "coords": { "q": -1, "r": 1, "s": 0 },
+      "neighbors": ["prov_4", "prov_5"],
+      "resources": [
+        { "good": "IRON_ORE", "richness": 100, "discovered": true, "depleted": false }
+      ],
+      "x": 70,
+      "y": 20,
+      "continent": "Aurelia",
+      "description": "Frontier hill duchies guarding passes into the cold mountain spine of Aurelia."
+    },
+    {
+      "id": "prov_4",
+      "name": "Cathedral Basin",
+      "displayName": "The Cathedral Basin",
+      "terrain": "HILLS",
+      "biome": "TEMPERATE",
+      "elevation": 300,
+      "fertility": 60,
+      "coords": { "q": 0, "r": 1, "s": -1 },
+      "neighbors": ["prov_2", "prov_3"],
+      "resources": [
+        { "good": "STONE", "richness": 75, "discovered": true, "depleted": false }
+      ],
+      "x": 80,
+      "y": 80,
+      "continent": "Aurelia",
+      "description": "Sovereign holy land containing deep pilgrim estates and holy monastic sites."
+    },
+    {
+      "id": "prov_5",
+      "name": "Salt Steppes",
+      "displayName": "The Salt Steppes",
+      "terrain": "PLAINS",
+      "biome": "STEPPE",
+      "elevation": 150,
+      "fertility": 35,
+      "coords": { "q": -1, "r": 0, "s": 1 },
+      "neighbors": ["prov_1", "prov_3"],
+      "resources": [
+        { "good": "HORSES", "richness": 95, "discovered": true, "depleted": false }
+      ],
+      "x": 20,
+      "y": 30,
+      "continent": "Aurelia",
+      "description": "Dry steppe lands dominated by nomadic draft clans controlling overland caravan highways."
+    },
+    {
+      "id": "prov_v1",
+      "name": "Rhakar Keep",
+      "displayName": "Empire of Rhakar",
+      "terrain": "MOUNTAINS",
+      "biome": "BOREAL",
+      "elevation": 980,
+      "fertility": 30,
+      "coords": { "q": 8, "r": -8, "s": 0 },
+      "neighbors": ["prov_v2", "prov_v3", "prov_v4"],
+      "resources": [
+        { "good": "GOLD_ORE", "richness": 90, "discovered": true, "depleted": false },
+        { "good": "STONE", "richness": 80, "discovered": true, "depleted": false }
+      ],
+      "x": 150,
+      "y": -150,
+      "continent": "Vareth",
+      "description": "Volcanic mountain redoubt and fortress heart of the declining Rhakari Empire."
+    },
+    {
+      "id": "prov_v2",
+      "name": "Kareth Prime",
+      "displayName": "Merchant League of Kareth",
+      "terrain": "COAST",
+      "biome": "MEDITERRANEAN",
+      "elevation": 5,
+      "fertility": 55,
+      "coords": { "q": 9, "r": -9, "s": 0 },
+      "neighbors": ["prov_v1", "prov_v3"],
+      "resources": [
+        { "good": "SALT", "richness": 100, "discovered": true, "depleted": false },
+        { "good": "FISH", "richness": 80, "discovered": true, "depleted": false }
+      ],
+      "x": 170,
+      "y": -170,
+      "continent": "Vareth",
+      "description": "The capital of the banking league of Vareth, controlling trade lanes and merchant fleets."
+    },
+    {
+      "id": "prov_v3",
+      "name": "Solmere Basin",
+      "displayName": "Kingdom of Solmere",
+      "terrain": "RIVER_VALLEY",
+      "biome": "MEDITERRANEAN",
+      "elevation": 90,
+      "fertility": 92,
+      "coords": { "q": 8, "r": -7, "s": -1 },
+      "neighbors": ["prov_v1", "prov_v2", "prov_v5"],
+      "resources": [
+        { "good": "WINE", "richness": 95, "discovered": true, "depleted": false },
+        { "good": "GRAIN", "richness": 88, "discovered": true, "depleted": false }
+      ],
+      "x": 160,
+      "y": -130,
+      "continent": "Vareth",
+      "description": "The southern agricultural titan, famous for olive groves, fine wines, and deep loyalty."
+    },
+    {
+      "id": "prov_v4",
+      "name": "Ulan Grasslands",
+      "displayName": "Steppe Confederation of Ulan",
+      "terrain": "PLAINS",
+      "biome": "STEPPE",
+      "elevation": 220,
+      "fertility": 38,
+      "coords": { "q": 7, "r": -7, "s": 0 },
+      "neighbors": ["prov_v1", "prov_v5"],
+      "resources": [
+        { "good": "HORSES", "richness": 100, "discovered": true, "depleted": false },
+        { "good": "LIVESTOCK", "richness": 85, "discovered": true, "depleted": false }
+      ],
+      "x": 130,
+      "y": -130,
+      "continent": "Vareth",
+      "description": "Vast endless grasslands supporting hundreds of thousands of nomadic horse warriors."
+    },
+    {
+      "id": "prov_v5",
+      "name": "Skywall Passes",
+      "displayName": "The Skywall Mountains",
+      "terrain": "DEEP_FOREST",
+      "biome": "BOREAL",
+      "elevation": 180,
+      "fertility": 45,
+      "coords": { "q": 7, "r": -8, "s": 1 },
+      "neighbors": ["prov_v3", "prov_v4"],
+      "resources": [
+        { "good": "TIMBER", "richness": 95, "discovered": true, "depleted": false },
+        { "good": "LEATHER", "richness": 90, "discovered": true, "depleted": false }
+      ],
+      "x": 130,
+      "y": -150,
+      "continent": "Vareth",
+      "description": "Isolated valleys with rich silver and copper veins guarding Vareth's highest passes."
+    },
+    {
+      "id": "prov_n1",
+      "name": "Talassar",
+      "displayName": "Maritime Republic of Talassar",
+      "terrain": "COAST",
+      "biome": "TEMPERATE",
+      "elevation": 10,
+      "fertility": 70,
+      "coords": { "q": -8, "r": 8, "s": 0 },
+      "neighbors": ["prov_n2", "prov_n3", "prov_n5"],
+      "resources": [
+        { "good": "LUXURY_GOODS", "richness": 100, "discovered": true, "depleted": false },
+        { "good": "FISH", "richness": 90, "discovered": true, "depleted": false }
+      ],
+      "x": -150,
+      "y": 150,
+      "continent": "Nythara",
+      "description": "Sovereign ocean republic dominating trans-oceanic navigation and shipbuilding yards."
+    },
+    {
+      "id": "prov_n2",
+      "name": "Orun Delta",
+      "displayName": "Kingdom of Orun",
+      "terrain": "RIVER_VALLEY",
+      "biome": "TROPICAL",
+      "elevation": 15,
+      "fertility": 95,
+      "coords": { "q": -9, "r": 9, "s": 0 },
+      "neighbors": ["prov_n1", "prov_n4"],
+      "resources": [
+        { "good": "GRAIN", "richness": 100, "discovered": true, "depleted": false },
+        { "good": "TIMBER", "richness": 80, "discovered": true, "depleted": false }
+      ],
+      "x": -170,
+      "y": 170,
+      "continent": "Nythara",
+      "description": "Extremely fertile delta basin along the Great River Orun, home to millions of souls."
+    },
+    {
+      "id": "prov_n3",
+      "name": "Skerries Islands",
+      "displayName": "The Island Compact",
+      "terrain": "COAST",
+      "biome": "TROPICAL",
+      "elevation": 8,
+      "fertility": 45,
+      "coords": { "q": -7, "r": 7, "s": 0 },
+      "neighbors": ["prov_n1", "prov_n5"],
+      "resources": [
+        { "good": "FISH", "richness": 95, "discovered": true, "depleted": false },
+        { "good": "LUXURY_GOODS", "richness": 85, "discovered": true, "depleted": false }
+      ],
+      "x": -130,
+      "y": 130,
+      "continent": "Nythara",
+      "description": "A complex network of coastal islands specializing in high sea privateering and fishing fleets."
+    },
+    {
+      "id": "prov_n4",
+      "name": "Emerald Canopy",
+      "displayName": "The Rainforest Realms",
+      "terrain": "DEEP_FOREST",
+      "biome": "TROPICAL",
+      "elevation": 70,
+      "fertility": 90,
+      "coords": { "q": -7, "r": 8, "s": -1 },
+      "neighbors": ["prov_n2", "prov_n5"],
+      "resources": [
+        { "good": "TIMBER", "richness": 100, "discovered": true, "depleted": false },
+        { "good": "SPICES", "richness": 90, "discovered": true, "depleted": false }
+      ],
+      "x": -130,
+      "y": 150,
+      "continent": "Nythara",
+      "description": "Vast tropical rainforest harboring valuable rare timber woods and shifts of small warlords."
+    },
+    {
+      "id": "prov_n5",
+      "name": "Twin Plateaus",
+      "displayName": "The Twin Plateaus",
+      "terrain": "HILLS",
+      "biome": "TEMPERATE",
+      "elevation": 550,
+      "fertility": 50,
+      "coords": { "q": -8, "r": 7, "s": 1 },
+      "neighbors": ["prov_n1", "prov_n3", "prov_n4"],
+      "resources": [
+        { "good": "GOLD_ORE", "richness": 95, "discovered": true, "depleted": false },
+        { "good": "IRON_ORE", "richness": 90, "discovered": true, "depleted": false }
+      ],
+      "x": -150,
+      "y": 130,
+      "continent": "Nythara",
+      "description": "Intense highland gold rush camps and ore mining shafts contested by rival ocean powers."
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+export enum GoodType {
+  // Food & Agriculture
+  GRAIN = "GRAIN", LIVESTOCK = "LIVESTOCK", FISH = "FISH", WINE = "WINE", SPICES = "SPICES", HERBS = "HERBS",
+  // Raw Materials
+  IRON_ORE = "IRON_ORE", TIMBER = "TIMBER", STONE = "STONE", COAL = "COAL", CLAY = "CLAY", SALT = "SALT", GOLD_ORE = "GOLD_ORE",
+  // Manufactured Goods
+  IRON_INGOTS = "IRON_INGOTS", STEEL = "STEEL", WEAPONS = "WEAPONS", ARMOR = "ARMOR", TOOLS = "TOOLS", CLOTH = "CLOTH",
+  PARCHMENT = "PARCHMENT", LUXURY_GOODS = "LUXURY_GOODS", GLASS = "GLASS",
+  // Livestock Products
+  WOOL = "WOOL", LEATHER = "LEATHER", HORSES = "HORSES", CATTLE = "CATTLE",
+  // Fuel & Energy
+  FIREWOOD = "FIREWOOD", CHARCOAL = "CHARCOAL",
+  // Currency
+  COIN = "COIN"
+}

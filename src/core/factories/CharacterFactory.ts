@@ -1,0 +1,57 @@
+import { nanoid } from 'nanoid';
+import { Character, Gender, Ambition } from '../models/Character';
+
+export class CharacterFactory {
+  static create(overrides: Partial<Character> = {}): Character {
+    return {
+      id: nanoid(),
+      firstName: 'John',
+      lastName: 'Doe',
+      dynastyId: 'dyn_0',
+      isPlayer: false,
+      gender: 'MALE',
+      age: 20,
+      health: 100,
+      fertility: 100,
+      isPregnant: false,
+      isAlive: true,
+      causeOfDeath: null,
+      deathDate: null,
+      birthProvinceId: 'prov_1',
+      religion: 'None',
+      culture: 'None',
+      languagesSpoken: [],
+      title: null,
+      position: null,
+      traits: [],
+      virtues: [],
+      flaws: [],
+      secretTrait: null,
+      fatherId: null,
+      motherId: null,
+      spouseId: null,
+      childrenIds: [],
+      siblingIds: [],
+      loverIds: [],
+      enemyIds: [],
+      allyIds: [],
+      mentorId: null,
+      diplomacy: 10,
+      martial: 10,
+      stewardship: 10,
+      intrigue: 10,
+      learning: 10,
+      piety: 50,
+      ambition: 'POWER',
+      opinion: {},
+      suspicion: {},
+      memories: [],
+      traumaIds: [],
+      primaryTitle: null,
+      heldTitles: [],
+      landedProvinceIds: [],
+      goldHoldings: 0,
+      ...overrides
+    };
+  }
+}

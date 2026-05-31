@@ -1,0 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&family=Lora:ital,wght@0,400;0,500;1,400&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-gold: #D9A957;
+  --color-blood: #C4616A;
+  --color-forest: #6DB88A;
+  --color-stone: rgba(245, 173, 140, 0.15);
+  --color-stone-light: #7A6E66;
+  --color-parchment: #F5AD8C;
+  --color-parchment-light: #ffffff;
+  --color-ink: #141210;
+  --color-ink-light: #1A1714;
+  --color-ink-lighter: #211E1A;
+  --color-panel: #2A2622;
+  --color-sky: #5B9BD5;
+  --color-danger: #C4616A;
+  --color-accent: #D97757;
+
+  --font-display: "Lora", serif;
+  --font-body: "DM Sans", sans-serif;
+  --font-data: "Share Tech Mono", monospace;
+  --font-header: "Lora", serif;
+}
+
+body {
+  background-color: var(--color-ink);
+  color: var(--color-parchment);
+  font-family: var(--font-body);
+  margin: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Ambient background from Claude UI kit */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 60% 40% at 80% 10%, rgba(217, 119, 87, 0.05) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 35% at 10% 80%, rgba(217, 119, 87, 0.04) 0%, transparent 55%);
+}
+
+/* Grid texture from Claude UI kit */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(rgba(245, 173, 140, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(245, 173, 140, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.35;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-ink);
+  border-left: 1px solid var(--color-stone);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-panel);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent);
+}
+

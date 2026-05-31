@@ -1,0 +1,121 @@
+import * as fs from 'fs';
+import * as path from 'path';
+
+const files = [
+  'src/app/Router.tsx',
+  'src/app/GameProvider.tsx',
+  'src/app/ThemeProvider.tsx',
+  'src/core/engine/GameLoop.ts',
+  'src/core/engine/TickScheduler.ts',
+  'src/core/engine/EventBus.ts',
+  'src/core/engine/WorldClock.ts',
+  'src/core/engine/RandomSeed.ts',
+  'src/core/systems/WorldSystem.ts',
+  'src/core/systems/PopulationSystem.ts',
+  'src/core/systems/EconomySystem.ts',
+  'src/core/systems/LogisticsSystem.ts',
+  'src/core/systems/MilitarySystem.ts',
+  'src/core/systems/DiplomacySystem.ts',
+  'src/core/systems/ReligionSystem.ts',
+  'src/core/systems/PoliticsSystem.ts',
+  'src/core/systems/DiseaseSystem.ts',
+  'src/core/systems/WeatherSystem.ts',
+  'src/core/systems/IntelligenceSystem.ts',
+  'src/core/models/World.ts',
+  'src/core/models/Province.ts',
+  'src/core/models/Settlement.ts',
+  'src/core/models/Terrain.ts',
+  'src/core/models/Climate.ts',
+  'src/core/models/Character.ts',
+  'src/core/models/Dynasty.ts',
+  'src/core/models/Army.ts',
+  'src/core/models/Unit.ts',
+  'src/core/models/Battle.ts',
+  'src/core/models/Resource.ts',
+  'src/core/models/TradeRoute.ts',
+  'src/core/models/BuildingType.ts',
+  'src/core/models/Building.ts',
+  'src/core/models/Law.ts',
+  'src/core/models/Treaty.ts',
+  'src/core/models/Religion.ts',
+  'src/core/models/Faction.ts',
+  'src/core/models/Event.ts',
+  'src/core/models/Chronicle.ts',
+  'src/core/factories/CharacterFactory.ts',
+  'src/core/factories/ArmyFactory.ts',
+  'src/core/factories/SettlementFactory.ts',
+  'src/core/factories/DynastyFactory.ts',
+  'src/core/factories/EventFactory.ts',
+  'src/data/terrain-types.ts',
+  'src/data/building-types.ts',
+  'src/data/unit-types.ts',
+  'src/data/technology-tree.ts',
+  'src/data/name-lists.ts',
+  'src/data/event-templates.ts',
+  'src/data/religion-data.ts',
+  'src/data/goods-catalogue.ts',
+  'src/data/law-catalogue.ts',
+  'src/data/trait-definitions.ts',
+  'src/data/historical-eras.ts',
+  'src/workers/SimulationWorker.ts',
+  'src/workers/PathfindingWorker.ts',
+  'src/workers/BattleWorker.ts',
+  'src/store/gameStore.ts',
+  'src/store/slices/worldSlice.ts',
+  'src/store/slices/playerSlice.ts',
+  'src/store/slices/militarySlice.ts',
+  'src/store/slices/economySlice.ts',
+  'src/store/slices/diplomacySlice.ts',
+  'src/store/slices/politicsSlice.ts',
+  'src/store/slices/uiSlice.ts',
+  'src/store/slices/chronicleSlice.ts',
+  'src/store/slices/settingsSlice.ts',
+  'src/hooks/useGameTick.ts',
+  'src/hooks/useProvince.ts',
+  'src/hooks/useCharacter.ts',
+  'src/hooks/useArmy.ts',
+  'src/hooks/useEconomy.ts',
+  'src/hooks/useDiplomacy.ts',
+  'src/hooks/useChronicle.ts',
+  'src/hooks/useFogOfWar.ts',
+  'src/hooks/useAlert.ts',
+  'src/hooks/useHotkeys.ts',
+  'src/hooks/useMapViewport.ts',
+  'src/components/layout/index.ts',
+  'src/components/panels/index.ts',
+  'src/components/map/index.ts',
+  'src/components/hud/index.ts',
+  'src/components/modals/index.ts',
+  'src/components/charts/index.ts',
+  'src/components/shared/index.ts',
+  'src/pages/MainMenu.tsx',
+  'src/pages/NewGame.tsx',
+  'src/pages/LoadGame.tsx',
+  'src/pages/GameView.tsx',
+  'src/pages/Settings.tsx',
+  'src/pages/Credits.tsx',
+  'src/utils/math.ts',
+  'src/utils/formatting.ts',
+  'src/utils/colorScale.ts',
+  'src/utils/geo.ts',
+  'src/utils/save.ts',
+  'src/utils/validation.ts',
+];
+
+files.forEach(file => {
+  const fullPath = path.join(process.cwd(), file);
+  const dir = path.dirname(fullPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  if (!fs.existsSync(fullPath)) {
+    let content = '// ' + file + ' stub\n';
+    // If it is a tsx, add an empty react component export to avoid compilation errors
+    if (file.endsWith('.tsx') && !file.includes('index.tsx') && !file.includes('App.tsx') && !file.includes('Router.tsx')) {
+        const componentName = path.basename(file, '.tsx');
+        content = `export function ${componentName}() { return <div>${componentName}</div>; }\n`;
+    }
+    fs.writeFileSync(fullPath, content);
+  }
+});
+console.log('Structure created!');
