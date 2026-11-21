@@ -28,6 +28,7 @@ export class LogisticsSystem {
     this.processProvinceProductionAndConvoys();
     this.simulateConvoysInTransit();
     this.processArmySupplyDepletionAndReplenish();
+    this.processBanditGangs();
   }
 
   private processProvinceRoadLogisticsAndBlockades() {
@@ -81,33 +82,61 @@ export class LogisticsSystem {
           food: 0,
           wood: 0,
           stone: 0,
-          iron: 0
+          iron: 0,
+          goods: {}
         };
       }
+
+      // Initialize missing goods on the fly (since GoodType enum is large)
+      const goodsCat = require('../../data/goods-catalogue');
+      Object.values(goodsCat.GoodType).forEach((g: any) => {
+        if (typeof province.stockpiles.goods[g] === 'undefined') {
+          province.stockpiles.goods[g] = 0;
+        }
+      });
 
       // Only simulate player/realm provinces for active trade logistics to capital
       if (province.ownerId !== 'player') return;
 
-      // Base production
-      let dailyFood = 5;
-      let dailyWood = 3;
-      let dailyStone = 2;
-      let dailyIron = 1;
+      // --- Derive base production from terrain, matching EconomySystem logic ---
+      // This replaces the old hardcoded dailyFood=5/wood=3 ghost economy.
+      // We use the same TERRAIN_DEFINITIONS approach as EconomySystem so both
+      // systems speak the same language.
+      const { TERRAIN_DEFINITIONS } = require('../../core/models/Terrain');
+      const terrainDef = TERRAIN_DEFINITIONS[province.terrain] || TERRAIN_DEFINITIONS['PLAINS'];
+      const baseFertility = province.fertility ?? 50;
+      const actualFertility = province.devastatedTimeLeft ? Math.max(5, baseFertility - 50) : baseFertility;
+      const fertilityMod = actualFertility / 50;
+
+      // Base production proportional to serf population and terrain — mirrors EconomySystem
+      let dailyFood  = Math.floor(province.population.serfs * 0.015 * terrainDef.agricultureModifier * fertilityMod);
+      let dailyWood  = Math.floor(province.population.serfs * 0.003 * (terrainDef.forestModifier ?? 1.0));
+      let dailyStone = Math.floor(province.population.serfs * 0.002 * (terrainDef.miningModifier ?? 1.0));
+      let dailyIron  = Math.floor(province.population.serfs * 0.001 * (terrainDef.miningModifier ?? 1.0));
+
+      // Special Trade Goods Generation
+      if (province.terrain === 'COAST') { province.stockpiles.goods[goodsCat.GoodType.FISH] += 10; province.stockpiles.goods[goodsCat.GoodType.SALT] += 2; }
+      if (province.terrain === 'HILLS') province.stockpiles.goods[goodsCat.GoodType.WINE] += 3;
+      if (province.terrain === 'DEEP_FOREST') province.stockpiles.goods[goodsCat.GoodType.HERBS] += 5;
+      if (province.terrain === 'DESERT') province.stockpiles.goods[goodsCat.GoodType.SPICES] += 2;
 
       // Apply building benefits
       province.buildings?.forEach((b: any) => {
-        if (b.typeId === 'FARM') dailyFood += 12;
-        if (b.typeId === 'FISHERY') dailyFood += 15;
-        if (b.typeId === 'LUMBER_CAMP') dailyWood += 12;
+        if (b.typeId === 'FARM') { dailyFood += 12; province.stockpiles.goods[goodsCat.GoodType.GRAIN] += 10; province.stockpiles.goods[goodsCat.GoodType.LIVESTOCK] += 2; }
+        if (b.typeId === 'FISHERY') { dailyFood += 15; province.stockpiles.goods[goodsCat.GoodType.FISH] += 15; }
+        if (b.typeId === 'LUMBER_CAMP') { dailyWood += 12; province.stockpiles.goods[goodsCat.GoodType.TIMBER] += 12; }
         if (b.typeId === 'MINE') {
           dailyIron += 8;
           dailyStone += 8;
+          province.stockpiles.goods[goodsCat.GoodType.IRON_ORE] += 8;
+          province.stockpiles.goods[goodsCat.GoodType.COAL] += 5;
         }
         if (b.typeId === 'SMELTER') {
           dailyIron += 15;
           dailyWood = Math.max(0, dailyWood - 4); // smiting consumes lumber
+          province.stockpiles.goods[goodsCat.GoodType.IRON_INGOTS] += 10;
         }
-        if (b.typeId === 'KILN') dailyStone += 10;
+        if (b.typeId === 'KILN') { dailyStone += 10; province.stockpiles.goods[goodsCat.GoodType.CLAY] += 5; }
         if (b.typeId === 'GRANARY') dailyFood += 5; // storage protection
         if (b.typeId === 'ROAD_NETWORK') {
           dailyWood += 3;
@@ -117,6 +146,8 @@ export class LogisticsSystem {
           dailyWood += 2;
           dailyStone += 2;
         }
+        if (b.typeId === 'WINERY') province.stockpiles.goods[goodsCat.GoodType.WINE] += 10;
+        if (b.typeId === 'GUILDHALL') { province.stockpiles.goods[goodsCat.GoodType.CLOTH] += 5; province.stockpiles.goods[goodsCat.GoodType.TOOLS] += 5; province.stockpiles.goods[goodsCat.GoodType.LUXURY_GOODS] += 2; }
       });
 
       // Apply season multipliers
@@ -151,11 +182,15 @@ export class LogisticsSystem {
             iron: Math.floor(province.stockpiles.iron),
           };
 
+          // Clone the extra goods
+          const extraGoods = { ...province.stockpiles.goods };
+
           // Clear local province stockpiles as they are loaded into convoy
           province.stockpiles.food = 0;
           province.stockpiles.wood = 0;
           province.stockpiles.stone = 0;
           province.stockpiles.iron = 0;
+          Object.keys(province.stockpiles.goods).forEach(k => province.stockpiles.goods[k] = 0);
 
           const convoyId = 'convoy_' + nanoid();
           const newConvoy = {
@@ -167,6 +202,7 @@ export class LogisticsSystem {
               TIMBER: cargo.wood,
               STONE: cargo.stone,
               IRON_INGOTS: cargo.iron,
+              ...extraGoods,
             },
             origin: province.coords,
             destination: destinationCoords,
@@ -179,6 +215,7 @@ export class LogisticsSystem {
 
             // Enriched fields for state transparency & UI representation
             rawCargo: cargo,
+            extraGoods,
             progressIndex: 0,
             originProvinceName: province.name,
             status: 'ACTIVE',
@@ -249,26 +286,37 @@ export class LogisticsSystem {
         }
       }
 
-      // Bandit raiding risk based on local unrest
+      // Bandit raiding risk: requires a real bandit gang entity to exist in the province
       if (!convoy.escort && currentProvince && !convoy.isRaided) {
-        const localUnrest = 100 - currentProvince.loyalty;
-        const totalDist = convoy.path.length;
-        const roadQual = Math.max(10, currentProvince.roadQuality);
-        const banditRisk = (localUnrest * totalDist) / roadQual;
+        const gang = this.engine.banditGangs[currentProvince.id];
+        if (gang && gang.strength > 0) {
+          // Higher gang strength = higher raid probability (max ~30% at strength 100)
+          const raidChance = (gang.strength / 100) * 0.30;
+          if (this.engine.rng.next() < raidChance) {
+            convoy.isRaided = true;
+            convoy.status = 'DISRUPTED';
+            convoy.logs.push(`BANDITS! "${gang.name}" raided the trade caravan in ${currentProvince.name}!`);
+            this.engine.alertSystem.queueAlert(
+              `Banditry: The "${gang.name}" (Strength: ${gang.strength}) raided a trade convoy in ${currentProvince.name}!`,
+              'URGENT'
+            );
 
-        // Daily rate trigger check (5% scaled by bandit density)
-        if (this.engine.rng.next() < (banditRisk / 150) * 0.15) {
-          convoy.isRaided = true;
-          convoy.status = 'DISRUPTED';
-          convoy.logs.push(`BANDITS! Outlaw highwaymen in ${currentProvince.name} raided the trade caravan, looting food and equipment!`);
-          this.engine.alertSystem.queueAlert(`Banditry: Merchant logistics raided by highwaymen in the poorly guarded territory of ${currentProvince.name}!`, 'URGENT');
-          
-          // Halve cargo
-          if (convoy.rawCargo) {
-            convoy.rawCargo.food = Math.floor(convoy.rawCargo.food / 2);
-            convoy.rawCargo.wood = Math.floor(convoy.rawCargo.wood / 2);
-            convoy.rawCargo.stone = Math.floor(convoy.rawCargo.stone / 2);
-            convoy.rawCargo.iron = Math.floor(convoy.rawCargo.iron / 2);
+            // Halve cargo (bandits steal half of everything)
+            if (convoy.rawCargo) {
+              convoy.rawCargo.food = Math.floor(convoy.rawCargo.food / 2);
+              convoy.rawCargo.wood = Math.floor(convoy.rawCargo.wood / 2);
+              convoy.rawCargo.stone = Math.floor(convoy.rawCargo.stone / 2);
+              convoy.rawCargo.iron = Math.floor(convoy.rawCargo.iron / 2);
+            }
+            // Also halve all trade goods
+            if (convoy.extraGoods) {
+              Object.keys(convoy.extraGoods).forEach((k: string) => {
+                convoy.extraGoods[k] = Math.floor(convoy.extraGoods[k] / 2);
+              });
+            }
+
+            // Successful raid grows the gang slightly
+            gang.strength = Math.min(100, gang.strength + 3);
           }
         }
       }
@@ -292,13 +340,26 @@ export class LogisticsSystem {
         convoy.status = 'ACTIVE';
         convoy.logs.push(`Successfully reached Capital gates. Unloading cargo...`);
 
-        // Empty into state stores
+        // Empty base resources into global stores
         this.engine.resources.food += (convoy.rawCargo?.food || 0);
         this.engine.resources.wood += (convoy.rawCargo?.wood || 0);
         this.engine.resources.stone += (convoy.rawCargo?.stone || 0);
         this.engine.resources.iron += (convoy.rawCargo?.iron || 0);
 
-        this.engine.alertSystem.queueAlert(`Supply Convoy has Safely Arrived! Received +${convoy.rawCargo?.food || 0} food and raw materials.`, 'NORMAL');
+        // Unload all trade goods into the global trade goods store
+        if (convoy.extraGoods) {
+          const res = this.engine.resources as any;
+          if (!res.goods) res.goods = {};
+          Object.keys(convoy.extraGoods).forEach((good: string) => {
+            res.goods[good] = (res.goods[good] || 0) + convoy.extraGoods[good];
+          });
+        }
+
+        const totalGoods = Object.values(convoy.extraGoods || {}).reduce((s: number, v: any) => s + v, 0);
+        this.engine.alertSystem.queueAlert(
+          `Supply Convoy Arrived from ${convoy.originProvinceName}: +${convoy.rawCargo?.food || 0} food, +${convoy.rawCargo?.iron || 0} iron, +${totalGoods} trade goods.`,
+          'NORMAL'
+        );
 
         // Remove from transit map
         delete this.engine.convoys[convoy.id];
@@ -427,6 +488,87 @@ export class LogisticsSystem {
         // Dissolution
         this.engine.alertSystem.queueAlert(`CATASTROPHIC DISSOLUTION! Army ${army.name} has completely dissolved due to 0% supplies!`, 'CRITICAL');
         delete this.engine.armies[army.id];
+      }
+    });
+  }
+
+  /**
+   * Phase 2 Item 5 — The Bandit Void Fix.
+   * Bandits are now PERSISTENT entities in `engine.banditGangs`.
+   * They spawn in provinces with low loyalty & bad roads, grow daily,
+   * shrink when a player army is nearby, and dissolve when suppressed.
+   * Convoy raid checks reference actual gang strength so "no gang = safe road".
+   */
+  private processBanditGangs() {
+    const BANDIT_NAMES = [
+      'The Gallows Brotherhood', 'Corpse-Road Reavers', 'The Iron Fist Syndicate',
+      'Hollow Creek Cutthroats', 'Saltmarch Brigands', 'The Broken Crown Company',
+      'Ashwood Rogues', 'Mudwater Highwaymen',
+    ];
+
+    // 1. SPAWN: Low loyalty + bad roads creates new gangs (once per province)
+    Object.values(this.engine.provinces).forEach(prov => {
+      if (prov.ownerId !== 'player') return;
+      const unrest = 100 - prov.loyalty;
+      const roadDecay = 100 - prov.roadQuality;
+      const spawnScore = (unrest * 0.6) + (roadDecay * 0.4);
+
+      if (!this.engine.banditGangs[prov.id] && spawnScore > 60 && this.engine.rng.next() < 0.015) {
+        const gangName = BANDIT_NAMES[Math.floor(this.engine.rng.next() * BANDIT_NAMES.length)];
+        this.engine.banditGangs[prov.id] = {
+          provinceId: prov.id,
+          strength: 5 + Math.floor(spawnScore * 0.3),
+          name: gangName,
+        };
+        this.engine.alertSystem.queueAlert(
+          `${gangName} has formed in the lawless backroads of ${prov.name}! They will prey on trade convoys.`,
+          'URGENT'
+        );
+        this.engine.chronicleSystem.add(
+          this.engine.clock.currentYear,
+          this.engine.clock.currentDay,
+          `Outlaw gang "${gangName}" established a hidden camp in ${prov.name}, exploiting broken roads and hungry serfs.`,
+          'NORMAL'
+        );
+      }
+    });
+
+    // 2. GROW / SHRINK existing gangs
+    Object.values(this.engine.banditGangs).forEach(gang => {
+      const prov = this.engine.provinces[gang.provinceId];
+      if (!prov) {
+        delete this.engine.banditGangs[gang.provinceId];
+        return;
+      }
+
+      // Player army nearby suppresses and reduces gang strength
+      const playerArmyNearby = Object.values(this.engine.armies).some(army =>
+        army.realmId === 'realm_1' &&
+        army.location.q === prov.coords.q &&
+        army.location.r === prov.coords.r
+      );
+
+      if (playerArmyNearby) {
+        gang.strength = Math.max(0, gang.strength - (5 + Math.floor(this.engine.rng.next() * 5)));
+        if (gang.strength <= 0) {
+          this.engine.alertSystem.queueAlert(
+            `Your army has suppressed the "${gang.name}" bandit gang in ${prov.name}! Roads are safe again.`,
+            'NORMAL'
+          );
+          this.engine.chronicleSystem.add(
+            this.engine.clock.currentYear,
+            this.engine.clock.currentDay,
+            `Royal levies crushed the "${gang.name}", restoring law to ${prov.name}'s trade roads.`,
+            'NORMAL'
+          );
+          delete this.engine.banditGangs[gang.provinceId];
+          return;
+        }
+      } else {
+        // Grow passively from local unrest
+        const growthFactor = (100 - prov.loyalty) / 100;
+        gang.strength += Math.floor(growthFactor * 2);
+        gang.strength = Math.min(gang.strength, 100);
       }
     });
   }

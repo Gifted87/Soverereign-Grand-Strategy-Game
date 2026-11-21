@@ -16,6 +16,15 @@ export class PopulationSystem {
 
         province.population.total = Math.floor(province.population.total * growthRate);
         
+        // Connect and grow settlement hierarchies (Issue 103)
+        const hierarchies = this.engine.aureliaSim?.settlementHierarchies?.[province.id];
+        if (hierarchies) {
+          hierarchies.forEach((h: any) => {
+            h.population = Math.floor(h.population * growthRate);
+          });
+          province.settlements = hierarchies as any;
+        }
+        
         // Adjust sub-populations proportionally based on continent-specific urbanization profiles
         const cont = province.continent || 'Aurelia';
         let rSerfs = 0.85;

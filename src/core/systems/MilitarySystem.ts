@@ -142,6 +142,25 @@ export class MilitarySystem {
       } else {
         army.attritionDays = 0;
       }
+
+      // --- Loot Purgatory Fix ---
+      // When a player army is in friendly territory and has accumulated loot, 
+      // deposit it to the treasury automatically (simulates soldiers returning riches home).
+      if ((army.loot || 0) > 0 && !isHostileTerritory && army.realmId === 'realm_1') {
+        const lootAmount = Math.floor(army.loot);
+        this.engine.treasury.goldBalance += lootAmount;
+        army.loot = 0;
+        this.engine.chronicleSystem.add(
+          this.engine.clock.currentYear,
+          this.engine.clock.currentDay,
+          `${army.name} returned plunder to the sovereign treasury: +${lootAmount} gold.`,
+          'NORMAL'
+        );
+        this.engine.alertSystem.queueAlert(
+          `${army.name} deposited ${lootAmount} gold of campaign spoils into the treasury.`,
+          'NORMAL'
+        );
+      }
     });
   }
 
@@ -199,8 +218,19 @@ export class MilitarySystem {
     const defCavRatio = getCavalryRatio(defender);
 
     // Cavalry modifier scaling
-    const attCavMod = 1 + (tDef.cavalryModifier - 1) * attCavRatio;
-    const defCavMod = 1 + (tDef.cavalryModifier - 1) * defCavRatio;
+    let attCavMod = 1 + (tDef.cavalryModifier - 1) * attCavRatio;
+    let defCavMod = 1 + (tDef.cavalryModifier - 1) * defCavRatio;
+
+    // Apply weather penalties
+    const weather = province?.currentWeather || 'CLEAR';
+    let baseDmgPenalty = 1.0;
+    if (weather === 'BLIZZARD') {
+      attCavMod = Math.max(0.1, attCavMod * 0.5); // Halved cavalry effectiveness
+      defCavMod = Math.max(0.1, defCavMod * 0.5);
+      baseDmgPenalty = 0.7; // 30% penalty to all damage
+    } else if (weather === 'THUNDERSTORM') {
+      baseDmgPenalty = 0.8; // 20% penalty to all damage due to mud and wind
+    }
 
     // Defense bonus reduces taken damage (e.g., Mountains defender is extremely shielded)
     const defenderDmgReductionFactor = 1 + (tDef.defenseBonus / 100);
@@ -210,11 +240,11 @@ export class MilitarySystem {
     let defCasualties = 0;
 
     // Attacker total damage (boosted or hampered by its cavalry modifier on the terrain)
-    const attDmgBase = Math.floor(initAttackerForce * (0.05 + (martialA * 0.005)));
+    const attDmgBase = Math.floor(initAttackerForce * (0.05 + (martialA * 0.005)) * baseDmgPenalty);
     const attDmg = Math.floor(attDmgBase * attCavMod);
 
     // Defender total damage
-    const defDmgBase = Math.floor(initDefenderForce * (0.05 + (martialB * 0.005)));
+    const defDmgBase = Math.floor(initDefenderForce * (0.05 + (martialB * 0.005)) * baseDmgPenalty);
     const defDmg = Math.floor(defDmgBase * defCavMod);
 
     // Apply casualties proportionally
@@ -235,6 +265,10 @@ export class MilitarySystem {
 
     attacker.units = attacker.units.filter(u => u.count > 0);
     defender.units = defender.units.filter(u => u.count > 0);
+
+    // Give surviving units experience
+    attacker.units.forEach(u => u.experience = Math.min(100, (u.experience || 0) + 5));
+    defender.units.forEach(u => u.experience = Math.min(100, (u.experience || 0) + 5));
 
     // Morale decrease
     attacker.morale = Math.max(0, attacker.morale - Math.floor((attCasualties / (initAttackerForce || 1)) * 100));
@@ -335,7 +369,8 @@ export class MilitarySystem {
 
           if (province.siegeProgress >= 100) {
             // Province falls! Update ownership
-            province.ownerId = 'player';
+            province.ownerId = army.commanderId || 'player';
+            province.realmId = army.realmId || 'realm_1';
             province.controlledBy = army.id;
             province.isBesieged = false;
             province.siegeProgress = null;

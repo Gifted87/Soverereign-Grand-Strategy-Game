@@ -8,6 +8,7 @@ export interface SettlementUnit {
   population: number;
   efficiency: number; // 0 - 100%
   lastYield: number; // food produced
+  marketValue?: number; // dynamic price based on supply/demand
 }
 
 export interface AureliaPoliticalEntity {
@@ -552,8 +553,8 @@ export class AureliaWorldSimulation {
 
       // (D) Capital city collects the feudal returns, giving direct resources payload
       if (city && parentProv.ownerId === 'player') {
-        const finalRevenue = Math.floor(cityTaxInfusion * 0.25); // Sovereign tax share
-        this.engine.treasury.goldBalance += finalRevenue;
+        // Double-dip fix: Tax revenue is exclusively handled by EconomySystem now.
+        // We only grant the physical food/grain resources from the settlement hierarchy.
         this.engine.resources.food += Math.floor(rawGrainSack * 0.15); // Sovereign grain bin
       }
     });
@@ -608,6 +609,24 @@ export class AureliaWorldSimulation {
 
     switch (action.type) {
       // SARN BANK ACTIONS
+      case 'REPAIR_BUILDING': {
+        const cost = 100;
+        const { provinceId, buildingId } = action.payload;
+        if (this.engine.treasury.goldBalance >= cost) {
+          const prov = this.engine.provinces[provinceId];
+          if (prov && prov.buildings) {
+            const b = prov.buildings.find((b: any) => b.id === buildingId);
+            if (b) {
+              this.engine.treasury.goldBalance -= cost;
+              b.condition = 100;
+              this.engine.alertSystem.queueAlert(`Restored structure condition in ${prov.name} for ${cost}🪙.`, 'NORMAL');
+            }
+          }
+        } else {
+          this.engine.alertSystem.queueAlert(`Insufficient treasury funds to repair building (needs ${cost}🪙).`, 'URGENT');
+        }
+        break;
+      }
       case 'DEPOSIT_GOLD': {
         const amt = action.payload.amount;
         if (this.engine.treasury.goldBalance >= amt) {

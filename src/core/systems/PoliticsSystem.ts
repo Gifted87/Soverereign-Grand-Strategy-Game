@@ -1,6 +1,7 @@
 import type { GameLoop } from '../engine/GameLoop';
 import { Faction, Plot } from '../models/Faction';
 import { Character } from '../models/Character';
+import { getActiveLaw } from '../../data/law-catalogue';
 import { nanoid } from 'nanoid';
 
 export class PoliticsSystem {
@@ -126,6 +127,15 @@ export class PoliticsSystem {
     character.causeOfDeath = cause;
     character.deathDate = this.engine.clock.currentDay;
 
+    // Memory Leak Fix: Strip massive relational arrays for dead characters to keep store payload small
+    character.memories = [];
+    character.traumaIds = [];
+    character.opinion = {};
+    character.suspicion = {};
+    character.loverIds = [];
+    character.enemyIds = [];
+    character.allyIds = [];
+
     this.engine.chronicleSystem.add(
       this.engine.clock.currentYear,
       this.engine.clock.currentDay,
@@ -135,14 +145,16 @@ export class PoliticsSystem {
 
     // Perform Feudal Succession
     let heir: Character | null = null;
+    const succLaw = getActiveLaw(this.engine, 'SUCCESSION');
+    const children = character.childrenIds.map(id => this.engine.characters[id]).filter(c => c && c.isAlive);
     
-    // Eldest child first
-    for (const childId of character.childrenIds) {
-      const child = this.engine.characters[childId];
-      if (child && child.isAlive) {
-        heir = child;
-        break;
-      }
+    if (succLaw.id === 'SUCC_ULTIMOGENITURE') {
+      if (children.length > 0) heir = children[children.length - 1]; // Youngest
+    } else if (succLaw.id === 'SUCC_SENIORITY') {
+      const dynMembers = Object.values(this.engine.characters).filter(c => c.isAlive && c.dynastyId === character.dynastyId).sort((a,b) => b.age - a.age);
+      if (dynMembers.length > 0) heir = dynMembers[0];
+    } else {
+      if (children.length > 0) heir = children[0]; // Eldest
     }
 
     // Then Sibling
@@ -206,7 +218,13 @@ export class PoliticsSystem {
 
       const opinionOfPlayer = character.opinion[player.id] || 0;
 
-      if (opinionOfPlayer < -30) {
+      const authLaw = getActiveLaw(this.engine, 'CROWN_AUTHORITY');
+      const authRevoltRisk = authLaw.effects.revoltRisk ?? 0;
+      
+      let factionThreshold = -30 - authRevoltRisk;
+      let factionStrengthGain = 20 + Math.floor(authRevoltRisk * 0.5);
+
+      if (opinionOfPlayer < factionThreshold) {
         // High likelihood to join noble rights faction
         let faction = Object.values(this.engine.factions).find(f => f.type === 'NOBLE_RIGHTS');
         
@@ -230,7 +248,7 @@ export class PoliticsSystem {
           this.engine.alertSystem.queueAlert(`A political faction is forming: ${faction.name}`, 'URGENT');
         } else if (!faction.members.includes(character.id)) {
           faction.members.push(character.id);
-          faction.strength += 20;
+          faction.strength += factionStrengthGain;
         }
       }
     });
@@ -804,14 +822,42 @@ export class PoliticsSystem {
     if (heir && heir.isAlive) {
       if (heir.age < 15) {
         heir.age++;
-        if (heir.age >= 13) {
-          // Educated Milestone: chooses custom path (e.g., STATECRAFT)
-          heir.diplomacy += 4;
-          heir.stewardship += 3;
+        const focus = (heir as any).educationFocus || 'STATECRAFT';
+        
+        // Ongoing incremental growth every "year" (age tick)
+        if (focus === 'MARTIAL') {
+          if (this.engine.rng.next() < 0.4) heir.martial = (heir.martial || 0) + 1;
+        } else if (focus === 'INTRIGUE') {
+          if (this.engine.rng.next() < 0.4) heir.intrigue = (heir.intrigue || 0) + 1;
+        } else if (focus === 'THEOLOGY') {
+          if (this.engine.rng.next() < 0.4) heir.learning = (heir.learning || 0) + 1;
+        } else {
+          if (this.engine.rng.next() < 0.4) heir.stewardship = (heir.stewardship || 0) + 1;
+        }
+
+        if (heir.age === 15) {
+          let msg = '';
+          if (focus === 'MARTIAL') {
+            heir.martial = (heir.martial || 0) + 5;
+            heir.stewardship = (heir.stewardship || 0) + 1;
+            msg = `${heir.firstName} has matured under MARTIAL study. Gains Martial competence.`;
+          } else if (focus === 'INTRIGUE') {
+            heir.intrigue = (heir.intrigue || 0) + 5;
+            heir.diplomacy = (heir.diplomacy || 0) + 1;
+            msg = `${heir.firstName} has matured under INTRIGUE study. Gains Intrigue competence.`;
+          } else if (focus === 'THEOLOGY') {
+            heir.learning = (heir.learning || 0) + 5;
+            heir.piety = (heir.piety || 0) + 20;
+            msg = `${heir.firstName} has matured under THEOLOGY study. Gains Theological competence.`;
+          } else {
+            heir.diplomacy = (heir.diplomacy || 0) + 4;
+            heir.stewardship = (heir.stewardship || 0) + 3;
+            msg = `${heir.firstName} has matured under STATECRAFT study. Gains Statecraft competence.`;
+          }
           this.engine.chronicleSystem.add(
             this.engine.clock.currentYear,
             currentDay,
-            `${heir.firstName} has matured under STATECRAFT study. Gains Statecraft competence.`,
+            msg,
             'NORMAL'
           );
         }

@@ -3,14 +3,21 @@ import { useGameStore } from '../store/gameStore';
 import SimulationWorker from '../workers/SimulationWorker?worker';
 
 export function useGameLoop() {
-  const { isPaused, speed, updateFromSnapshot } = useGameStore();
+  const isPaused = useGameStore(s => s.isPaused);
+  const speed = useGameStore(s => s.speed);
+  const updateFromSnapshot = useGameStore(s => s.updateFromSnapshot);
   const workerRef = useRef<Worker | null>(null);
   const updateRef = useRef(updateFromSnapshot);
+  const pausedRef = useRef(isPaused);
 
   // Keep latest snapshot update function
   useEffect(() => {
     updateRef.current = updateFromSnapshot;
   }, [updateFromSnapshot]);
+
+  useEffect(() => {
+    pausedRef.current = isPaused;
+  }, [isPaused]);
 
   useEffect(() => {
     // Initialize worker
@@ -27,7 +34,7 @@ export function useGameLoop() {
     }
     
     workerRef.current.onmessage = (e) => {
-      if (e.data.type === 'TICK') {
+      if (e.data.type === 'TICK' || e.data.type === 'TICK_DELTA') {
         updateRef.current(e.data.payload);
       }
     };
@@ -41,9 +48,21 @@ export function useGameLoop() {
     };
     window.addEventListener('simulation_action', handleSimulationAction);
 
+    const handleVisibilityChange = () => {
+      if (!workerRef.current) return;
+      if (document.hidden) {
+        workerRef.current.postMessage({ type: 'PAUSE' });
+      } else if (!pausedRef.current) {
+        workerRef.current.postMessage({ type: 'PLAY' });
+        workerRef.current.postMessage({ type: 'SET_SPEED', payload: useGameStore.getState().speed });
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
       workerRef.current?.terminate();
       window.removeEventListener('simulation_action', handleSimulationAction);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 

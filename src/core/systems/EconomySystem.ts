@@ -1,5 +1,7 @@
 import type { GameLoop } from '../engine/GameLoop';
 import { TERRAIN_DEFINITIONS } from '../models/Terrain';
+import { BUILDING_TYPES } from '../../data/building-types';
+import { getActiveLaw } from '../../data/law-catalogue';
 
 export class EconomySystem {
   constructor(private engine: GameLoop) {}
@@ -82,11 +84,21 @@ export class EconomySystem {
 
       // Unrest from starvation
       if (foodProduced < foodRequired) {
-        if (this.engine.rng.next() < 0.1) {
-            province.loyalty = Math.max(0, province.loyalty - (localHasCourthouse ? 0.5 : 1));
-            if (province.loyalty < 30) province.population.mood = 'ANGRY';
+        // Pull the shortfall from global food reserves first
+        const shortfall = foodRequired - foodProduced;
+        this.engine.resources.food = Math.max(0, this.engine.resources.food - shortfall);
+
+        // If global food is also exhausted, trigger loyalty hit
+        if (this.engine.resources.food <= 0) {
+          if (this.engine.rng.next() < 0.1) {
+              province.loyalty = Math.max(0, province.loyalty - (localHasCourthouse ? 0.5 : 1));
+              if (province.loyalty < 30) province.population.mood = 'ANGRY';
+          }
         }
       } else {
+        // Province is self-sufficient — still consume its fair share from global pool
+        this.engine.resources.food = Math.max(0, this.engine.resources.food - foodRequired);
+
         if (this.engine.rng.next() < 0.05) {
             province.loyalty = Math.min(100, province.loyalty + (localHasPrison ? 1.5 : 1));
             if (province.loyalty > 60) province.population.mood = 'CONTENT';
@@ -100,9 +112,15 @@ export class EconomySystem {
 
       // Collect taxes on month boundaries
       if (isNewMonth && province.ownerId === 'player') {
+        const taxLaw = getActiveLaw(this.engine, 'TAXATION');
+        let taxMultiplier = taxLaw.effects.taxMultiplier ?? 1.0;
+        
+        const tradeLaw = getActiveLaw(this.engine, 'TRADE');
+        let tradeMultiplier = tradeLaw.effects.tradeMultiplier ?? 1.0;
+
         // Collect silver levies from serfs and gold tariffs from merchants
-        let serfTaxes = province.population.serfs * 0.02 * (province.loyalty / 100);
-        let merchantTaxes = province.population.merchants * 0.08 * (province.loyalty / 100);
+        let serfTaxes = province.population.serfs * 0.02 * (province.loyalty / 100) * taxMultiplier;
+        let merchantTaxes = province.population.merchants * 0.08 * (province.loyalty / 100) * taxMultiplier * tradeMultiplier;
         
         // Custom building tax buffs
         let localHasMarket = false;
@@ -164,18 +182,47 @@ export class EconomySystem {
         
         totalTaxCollected += totalProvTax;
       }
+
+      // Degrade buildings monthly
+      if (isNewMonth && province.buildings) {
+        province.buildings.forEach((b: any) => {
+          if (b.condition !== undefined) {
+            // Degrade by 1 to 3 points randomly
+            const degradation = 1 + Math.floor(this.engine.rng.next() * 3);
+            b.condition = Math.max(0, b.condition - degradation);
+          }
+        });
+        
+        // Destroy buildings that reached 0 condition
+        const beforeCount = province.buildings.length;
+        province.buildings = province.buildings.filter((b: any) => b.condition === undefined || b.condition > 0);
+        const afterCount = province.buildings.length;
+        if (beforeCount > afterCount && province.ownerId === 'player') {
+          this.engine.alertSystem.queueAlert(`A dilapidated building in ${province.name} has collapsed from disrepair!`, 'URGENT');
+        }
+      }
     });
 
     if (isNewMonth) {
       // Treasury building lowers monthly corruption gold bleed
       let hasTreasuryCount = 0;
+      let buildingUpkeepTotal = 0;
+
       Object.values(this.engine.provinces).forEach(prov => {
         if (prov.ownerId === 'player') {
           prov.buildings?.forEach((b: any) => {
             if (b.typeId === 'TREASURY') hasTreasuryCount++;
+            
+            // Tally building upkeep dynamically instead of using hardcoded values
+            const bDef = BUILDING_TYPES[b.typeId];
+            if (bDef && bDef.upkeep) {
+              buildingUpkeepTotal += bDef.upkeep;
+            }
           });
         }
       });
+      
+      this.engine.treasury.buildingUpkeep = buildingUpkeepTotal;
       
       let baseUpkeep = this.engine.treasury.militaryUpkeep + this.engine.treasury.buildingUpkeep + this.engine.treasury.courtUpkeep;
       let afterTreasuryUpkeep = baseUpkeep;
@@ -190,6 +237,20 @@ export class EconomySystem {
       this.engine.treasury.taxRevenue = totalTaxCollected;
       this.engine.treasury.goldBalance = Math.max(0, this.engine.treasury.goldBalance + netTax);
       this.engine.treasury.goldPerTick = netTax;
+
+      // Update dynamic market prices based on supply/demand for the UI
+      if (this.engine.aureliaSim?.settlementHierarchies) {
+        Object.values(this.engine.aureliaSim.settlementHierarchies).forEach(sets => {
+          sets.forEach(settlement => {
+            const baseValue = 15;
+            // Demand is driven by population. Supply is lastYield.
+            const supplyFactor = settlement.lastYield > 0 ? (settlement.population * 0.05 / settlement.lastYield) : 2.5;
+            // Price fluctuates between 0.5x and 3.0x base value, plus random noise
+            const boundedFactor = Math.max(0.5, Math.min(3.0, supplyFactor));
+            settlement.marketValue = Math.max(1, Math.floor(baseValue * boundedFactor * (1 + (this.engine.rng.next() - 0.5) * 0.2)));
+          });
+        });
+      }
 
       // Alert about monthly audits
       this.engine.alertSystem.queueAlert(

@@ -67,4 +67,21 @@ export interface Province {
     daysLeft: number;
     totalDays: number;
   }[];
+  stockpiles?: {
+    food: number;
+    wood: number;
+    stone: number;
+    iron: number;
+    goods: Record<string, number>;
+  };
+  // Fields populated by AureliaWorldSimulation at runtime
+  vassalCount?: number;
+  militaryPower?: number;
+  allianceId?: string | null;
+  // Extended sovereign province fields (populated for major realm centres)
+  stability?: number;       // 0–100 political stability
+  emblem?: string;          // emoji emblem for the province card
+  type?: string;            // e.g. 'CAPITAL_CITY', 'FORTRESS', 'TRADE_PORT'
+  treasury?: number;        // local treasury gold coffers
+  stateVector?: any;        // Tier 4 state vector or similar
 }

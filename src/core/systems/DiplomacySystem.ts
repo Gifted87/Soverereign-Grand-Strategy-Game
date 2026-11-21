@@ -48,41 +48,56 @@ export class DiplomacySystem {
 
     // Tick active treaties
     Object.entries(this.engine.treaties).forEach(([treatyId, treaty]) => {
+      // Check if any character party is dead
+      let partyDead = false;
+      treaty.parties.forEach(pId => {
+        const char = this.engine.characters[pId];
+        if (char && char.isAlive === false) {
+          partyDead = true;
+        }
+      });
+
       // Expiry check
-      if (treaty.expiryDate !== null && currentDay >= treaty.expiryDate) {
+      if (treaty.isActive !== false && ((treaty.expiryDate !== null && currentDay >= treaty.expiryDate) || partyDead)) {
         this.engine.chronicleSystem.add(
           this.engine.clock.currentYear,
           this.engine.clock.currentDay,
-          `The diplomatic ${treaty.type} pact between ${treaty.parties.join(' and ')} has expired.`,
+          `The diplomatic ${treaty.type} pact involving ${treaty.parties.join(' and ')} has ended.`,
           'NORMAL'
         );
+        delete this.engine.treaties[treatyId];
+        return;
+      }
+      if (treaty.isActive === false) {
         delete this.engine.treaties[treatyId];
         return;
       }
 
       // Process monthly tributes for Vassals
       if (treaty.type === 'VASSALAGE' && currentDay % 30 === 0) {
-        const liegeRealm = treaty.parties[0]; // say primary party is liege
-        const vassalRealm = treaty.parties[1];
+        const liegeId = treaty.parties[0];
+        const vassalId = treaty.parties[1];
 
-        // Find standard lord characters corresponding to these realms
-        const liegeLord = Object.values(this.engine.characters).find(c => c.isPlayer); // say liege is player for simplicity
-        const vassalLord = Object.values(this.engine.characters).find(c => c.id === 'enemy_lord');
+        const liegeLord = this.engine.characters[liegeId];
+        const vassalLord = this.engine.characters[vassalId];
 
         if (liegeLord && vassalLord) {
-          const tributeAmount = 100;
-          if (vassalLord.goldHoldings >= tributeAmount) {
+          // Dynamic tribute amount based on vassal wealth
+          const tributeAmount = Math.floor(vassalLord.goldHoldings * 0.1); 
+          if (tributeAmount > 0 && vassalLord.goldHoldings >= tributeAmount) {
             vassalLord.goldHoldings -= tributeAmount;
             liegeLord.goldHoldings += tributeAmount;
             
-            // Sync with engine treasury
-            this.engine.treasury.goldBalance += tributeAmount;
-            this.engine.treasury.tributeIncome += tributeAmount;
+            // Sync with engine treasury if liege is player
+            if (liegeLord.isPlayer) {
+              this.engine.treasury.goldBalance += tributeAmount;
+              this.engine.treasury.tributeIncome += tributeAmount;
 
-            this.engine.alertSystem.queueAlert(
-              `Received ${tributeAmount} gold tribute from vassal state.`,
-              'NORMAL'
-            );
+              this.engine.alertSystem.queueAlert(
+                `Received ${tributeAmount} gold tribute from vassal ${vassalLord.firstName}.`,
+                'NORMAL'
+              );
+            }
           }
         }
       }
@@ -93,18 +108,18 @@ export class DiplomacySystem {
       Object.values(this.engine.treaties).forEach(treaty => {
         if (treaty.type === 'ALLIANCE') {
           // Boost opinion between lord entities of these alliances
-          const charA = Object.values(this.engine.characters).find(c => c.isPlayer);
-          const charB = Object.values(this.engine.characters).find(c => c.id === 'enemy_lord');
+          const charA = this.engine.characters[treaty.parties[0]];
+          const charB = this.engine.characters[treaty.parties[1]];
 
           if (charA && charB) {
-            if (charA.opinion[charB.id] !== undefined) {
+            if (charA.opinion && charA.opinion[charB.id] !== undefined) {
               charA.opinion[charB.id] = Math.min(100, charA.opinion[charB.id] + 1);
-            } else {
+            } else if (charA.opinion) {
               charA.opinion[charB.id] = 10;
             }
-            if (charB.opinion[charA.id] !== undefined) {
+            if (charB.opinion && charB.opinion[charA.id] !== undefined) {
               charB.opinion[charA.id] = Math.min(100, charB.opinion[charA.id] + 1);
-            } else {
+            } else if (charB.opinion) {
               charB.opinion[charA.id] = 10;
             }
           }

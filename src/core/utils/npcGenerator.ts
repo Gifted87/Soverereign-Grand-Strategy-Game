@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid';
 import { Character, Gender, Ambition, Trait } from '../models/Character';
 import { TRAIT_DEFINITIONS } from '../../data/trait-definitions';
+import { createDefaultNpcState } from '../models/NpcStateVector';
 
 // Comprehensive name lists per culture/region for realistic medieval names
 const MALE_FIRST_NAMES = [
@@ -27,19 +28,25 @@ const LAST_NAMES = [
 const CULTURES = ['Saxon', 'Latin', 'Norse', 'Norman', 'Occitan', 'Frankish', 'Welsh', 'Gaelic'];
 const RELIGIONS = ['christianity', 'paganism', 'heresy'];
 
+
+// Helper to use either provided RNG or Math.random
+function getRand(rng?: any) {
+  return rng && typeof rng.next === 'function' ? rng.next() : Math.random();
+}
+
 // Helper to choose random item from array
-function randomChoice<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
+function randomChoice<T>(arr: T[], rng?: any): T {
+  return arr[Math.floor(getRand(rng) * arr.length)];
 }
 
 // Helper to get random traits
-function getRandomTraits(count: number, avoidIds: string[] = []): Trait[] {
+function getRandomTraits(count: number, avoidIds: string[] = [], rng?: any): Trait[] {
   const keys = Object.keys(TRAIT_DEFINITIONS).filter(k => !avoidIds.includes(k));
   const selected: Trait[] = [];
   const selectedIds = new Set<string>();
   
   while (selected.length < count && selected.length < keys.length) {
-    const k = randomChoice(keys);
+    const k = randomChoice(keys, rng);
     if (!selectedIds.has(k)) {
       selectedIds.add(k);
       const trait = TRAIT_DEFINITIONS[k];
@@ -51,12 +58,12 @@ function getRandomTraits(count: number, avoidIds: string[] = []): Trait[] {
   return selected;
 }
 
-export function generateDynamicNPC(roleType: string, overrides: Partial<Character> = {}): Character {
-  const gender: Gender = overrides.gender || (Math.random() < 0.85 ? 'MALE' : 'FEMALE'); // Default historical focus for medieval rulers / military, but can be either
-  const firstName = overrides.firstName || (gender === 'MALE' ? randomChoice(MALE_FIRST_NAMES) : randomChoice(FEMALE_FIRST_NAMES));
-  const lastName = overrides.lastName || randomChoice(LAST_NAMES);
-  const age = overrides.age || (20 + Math.floor(Math.random() * 45));
-  const culture = overrides.culture || randomChoice(CULTURES);
+export function generateDynamicNPC(roleType: string, overrides: Partial<Character> = {}, rng?: any): Character {
+  const gender: Gender = overrides.gender || (getRand(rng) < 0.85 ? 'MALE' : 'FEMALE'); // Default historical focus for medieval rulers / military, but can be either
+  const firstName = overrides.firstName || (gender === 'MALE' ? randomChoice(MALE_FIRST_NAMES, rng) : randomChoice(FEMALE_FIRST_NAMES, rng));
+  const lastName = overrides.lastName || randomChoice(LAST_NAMES, rng);
+  const age = overrides.age || (20 + Math.floor(getRand(rng) * 45));
+  const culture = overrides.culture || randomChoice(CULTURES, rng);
   const religion = overrides.religion || 'christianity';
 
   const parsedId = overrides.id || (roleType.toUpperCase().startsWith('FOREIGN_') ? 'foreign_' + nanoid() : nanoid());
@@ -75,7 +82,7 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
     isAlive: true,
     causeOfDeath: null,
     deathDate: null,
-    birthProvinceId: overrides.birthProvinceId || 'prov_' + (1 + Math.floor(Math.random() * 5)),
+    birthProvinceId: overrides.birthProvinceId || 'prov_' + (1 + Math.floor(getRand(rng) * 5)),
     religion,
     culture,
     languagesSpoken: [culture, 'Latin'],
@@ -120,11 +127,11 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
       char.title = { id: 'title_' + char.id, name: 'Sovereign King' };
       char.primaryTitle = char.title;
       char.heldTitles = [char.title];
-      char.martial = 15 + Math.floor(Math.random() * 5);
-      char.diplomacy = 12 + Math.floor(Math.random() * 4);
-      char.stewardship = 11 + Math.floor(Math.random() * 4);
-      char.intrigue = 9 + Math.floor(Math.random() * 4);
-      char.learning = 8 + Math.floor(Math.random() * 4);
+      char.martial = 15 + Math.floor(getRand(rng) * 5);
+      char.diplomacy = 12 + Math.floor(getRand(rng) * 4);
+      char.stewardship = 11 + Math.floor(getRand(rng) * 4);
+      char.intrigue = 9 + Math.floor(getRand(rng) * 4);
+      char.learning = 8 + Math.floor(getRand(rng) * 4);
       char.ambition = 'POWER';
       char.goldHoldings = 1500;
       char.traits = [TRAIT_DEFINITIONS['BRAVE'], TRAIT_DEFINITIONS['AMBITIOUS']].filter(Boolean);
@@ -135,10 +142,10 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
       char.title = { id: 'title_' + char.id, name: 'Earl Defensio' };
       char.primaryTitle = char.title;
       char.heldTitles = [char.title];
-      char.martial = 12 + Math.floor(Math.random() * 4);
-      char.stewardship = 16 + Math.floor(Math.random() * 4);
-      char.diplomacy = 11 + Math.floor(Math.random() * 4);
-      char.intrigue = 10 + Math.floor(Math.random() * 4);
+      char.martial = 12 + Math.floor(getRand(rng) * 4);
+      char.stewardship = 16 + Math.floor(getRand(rng) * 4);
+      char.diplomacy = 11 + Math.floor(getRand(rng) * 4);
+      char.intrigue = 10 + Math.floor(getRand(rng) * 4);
       char.ambition = 'LEGACY';
       char.goldHoldings = 1800;
       char.traits = [TRAIT_DEFINITIONS['PATIENT'], TRAIT_DEFINITIONS['TEMPERATE']].filter(Boolean);
@@ -149,8 +156,8 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
       char.title = { id: 'title_' + char.id, name: 'Grand Crusader' };
       char.primaryTitle = char.title;
       char.heldTitles = [char.title];
-      char.martial = 14 + Math.floor(Math.random() * 5);
-      char.learning = 13 + Math.floor(Math.random() * 4);
+      char.martial = 14 + Math.floor(getRand(rng) * 5);
+      char.learning = 13 + Math.floor(getRand(rng) * 4);
       char.piety = 300;
       char.ambition = 'PIETY';
       char.goldHoldings = 1200;
@@ -162,9 +169,9 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
       char.title = { id: 'title_' + char.id, name: 'Duchess Sovereign' };
       char.primaryTitle = char.title;
       char.heldTitles = [char.title];
-      char.intrigue = 17 + Math.floor(Math.random() * 4);
-      char.diplomacy = 14 + Math.floor(Math.random() * 4);
-      char.stewardship = 12 + Math.floor(Math.random() * 3);
+      char.intrigue = 17 + Math.floor(getRand(rng) * 4);
+      char.diplomacy = 14 + Math.floor(getRand(rng) * 4);
+      char.stewardship = 12 + Math.floor(getRand(rng) * 3);
       char.ambition = 'REVENGE';
       char.goldHoldings = 1000;
       char.traits = [TRAIT_DEFINITIONS['DECEITFUL'], TRAIT_DEFINITIONS['PARANOID']].filter(Boolean);
@@ -175,9 +182,9 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
       char.title = { id: 'title_' + char.id, name: 'Merchant Doge' };
       char.primaryTitle = char.title;
       char.heldTitles = [char.title];
-      char.stewardship = 18 + Math.floor(Math.random() * 3);
-      char.diplomacy = 15 + Math.floor(Math.random() * 4);
-      char.intrigue = 12 + Math.floor(Math.random() * 4);
+      char.stewardship = 18 + Math.floor(getRand(rng) * 3);
+      char.diplomacy = 15 + Math.floor(getRand(rng) * 4);
+      char.intrigue = 12 + Math.floor(getRand(rng) * 4);
       char.ambition = 'WEALTH';
       char.goldHoldings = 4000;
       char.traits = [TRAIT_DEFINITIONS['GREEDY'], TRAIT_DEFINITIONS['TEMPERATE']].filter(Boolean);
@@ -188,9 +195,9 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
       char.title = { id: 'title_' + char.id, name: 'Grand Chieftain' };
       char.primaryTitle = char.title;
       char.heldTitles = [char.title];
-      char.martial = 18 + Math.floor(Math.random() * 3);
-      char.intrigue = 11 + Math.floor(Math.random() * 4);
-      char.diplomacy = 6 + Math.floor(Math.random() * 4);
+      char.martial = 18 + Math.floor(getRand(rng) * 3);
+      char.intrigue = 11 + Math.floor(getRand(rng) * 4);
+      char.diplomacy = 6 + Math.floor(getRand(rng) * 4);
       char.ambition = 'FREEDOM';
       char.goldHoldings = 600;
       char.traits = [TRAIT_DEFINITIONS['WRATHFUL'], TRAIT_DEFINITIONS['BRAVE']].filter(Boolean);
@@ -201,8 +208,8 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
       char.title = { id: 'title_' + char.id, name: 'Exiled Sovereign' };
       char.primaryTitle = char.title;
       char.heldTitles = [char.title];
-      char.martial = 13 + Math.floor(Math.random() * 4);
-      char.intrigue = 13 + Math.floor(Math.random() * 4);
+      char.martial = 13 + Math.floor(getRand(rng) * 4);
+      char.intrigue = 13 + Math.floor(getRand(rng) * 4);
       char.ambition = 'REVENGE';
       char.goldHoldings = 900;
       char.traits = [TRAIT_DEFINITIONS['PARANOID'], TRAIT_DEFINITIONS['AMBITIOUS']].filter(Boolean);
@@ -213,9 +220,9 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
       char.title = { id: 'title_' + char.id, name: 'Titular King' };
       char.primaryTitle = char.title;
       char.heldTitles = [char.title];
-      char.diplomacy = 11 + Math.floor(Math.random() * 3);
-      char.martial = 6 + Math.floor(Math.random() * 5);
-      char.stewardship = 6 + Math.floor(Math.random() * 5);
+      char.diplomacy = 11 + Math.floor(getRand(rng) * 3);
+      char.martial = 6 + Math.floor(getRand(rng) * 5);
+      char.stewardship = 6 + Math.floor(getRand(rng) * 5);
       char.ambition = 'LEGACY';
       char.goldHoldings = 1100;
       char.traits = [TRAIT_DEFINITIONS['LAZY'], TRAIT_DEFINITIONS['SLOW']].filter(Boolean);
@@ -225,35 +232,35 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
     // ----------------- COURT ADVISORS -----------------
     case 'ADVISOR_CHANCELLOR':
       char.position = { id: 'pos_chancellor', name: 'Chancellor' };
-      char.diplomacy = 13 + Math.floor(Math.random() * 6);
+      char.diplomacy = 13 + Math.floor(getRand(rng) * 6);
       char.ambition = 'POWER';
       char.traits = [TRAIT_DEFINITIONS['HONEST'], TRAIT_DEFINITIONS['PATIENT']].filter(Boolean);
       break;
 
     case 'ADVISOR_MARSHAL':
       char.position = { id: 'pos_marshal', name: 'Marshal' };
-      char.martial = 14 + Math.floor(Math.random() * 6);
+      char.martial = 14 + Math.floor(getRand(rng) * 6);
       char.ambition = 'LEGACY';
       char.traits = [TRAIT_DEFINITIONS['BRAVE'], TRAIT_DEFINITIONS['WRATHFUL']].filter(Boolean);
       break;
 
     case 'ADVISOR_SPYMASTER':
       char.position = { id: 'pos_spymaster', name: 'Spymaster' };
-      char.intrigue = 14 + Math.floor(Math.random() * 6);
+      char.intrigue = 14 + Math.floor(getRand(rng) * 6);
       char.ambition = 'REVENGE';
       char.traits = [TRAIT_DEFINITIONS['DECEITFUL'], TRAIT_DEFINITIONS['PARANOID']].filter(Boolean);
       break;
 
     case 'ADVISOR_TREASURER':
       char.position = { id: 'pos_treasurer', name: 'Treasurer' };
-      char.stewardship = 13 + Math.floor(Math.random() * 7);
+      char.stewardship = 13 + Math.floor(getRand(rng) * 7);
       char.ambition = 'WEALTH';
       char.traits = [TRAIT_DEFINITIONS['GREEDY'], TRAIT_DEFINITIONS['DILIGENT']].filter(Boolean);
       break;
 
     case 'ADVISOR_PRIEST':
       char.position = { id: 'pos_priest', name: 'Spiritual Advisor' };
-      char.learning = 13 + Math.floor(Math.random() * 7);
+      char.learning = 13 + Math.floor(getRand(rng) * 7);
       char.piety = 100;
       char.ambition = 'PIETY';
       char.traits = [TRAIT_DEFINITIONS['ZEALOUS'], TRAIT_DEFINITIONS['HUMBLE']].filter(Boolean);
@@ -262,9 +269,9 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
     // ----------------- VASSAL ARCHETYPES -----------------
     case 'VASSAL_LOYAL_VETERAN':
       char.title = { id: 'title_' + char.id, name: 'Marshal Baron' };
-      char.martial = 16 + Math.floor(Math.random() * 5);
-      char.diplomacy = 12 + Math.floor(Math.random() * 3);
-      char.age = 55 + Math.floor(Math.random() * 15); // Old veteran
+      char.martial = 16 + Math.floor(getRand(rng) * 5);
+      char.diplomacy = 12 + Math.floor(getRand(rng) * 3);
+      char.age = 55 + Math.floor(getRand(rng) * 15); // Old veteran
       char.ambition = 'LEGACY';
       char.traits = [TRAIT_DEFINITIONS['BRAVE'], TRAIT_DEFINITIONS['HONEST']].filter(Boolean);
       char.opinion = { 'player': 50 }; // Very loyal by default
@@ -273,9 +280,9 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'VASSAL_AMBITIOUS_NEPHEW':
       char.title = { id: 'title_' + char.id, name: 'Marquis Successor' };
-      char.intrigue = 15 + Math.floor(Math.random() * 6);
-      char.martial = 11 + Math.floor(Math.random() * 4);
-      char.age = 19 + Math.floor(Math.random() * 8); // Young, greedy nephew
+      char.intrigue = 15 + Math.floor(getRand(rng) * 6);
+      char.martial = 11 + Math.floor(getRand(rng) * 4);
+      char.age = 19 + Math.floor(getRand(rng) * 8); // Young, greedy nephew
       char.ambition = 'POWER';
       char.traits = [TRAIT_DEFINITIONS['AMBITIOUS'], TRAIT_DEFINITIONS['DECEITFUL']].filter(Boolean);
       char.opinion = { 'player': -25 };
@@ -284,7 +291,7 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'VASSAL_PIOUS_BISHOP':
       char.title = { id: 'title_' + char.id, name: 'Provincial Bishop' };
-      char.learning = 15 + Math.floor(Math.random() * 5);
+      char.learning = 15 + Math.floor(getRand(rng) * 5);
       char.piety = 250;
       char.ambition = 'PIETY';
       char.traits = [TRAIT_DEFINITIONS['ZEALOUS'], TRAIT_DEFINITIONS['TEMPERATE']].filter(Boolean);
@@ -294,7 +301,7 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'VASSAL_GREEDY_MERCHANT':
       char.title = { id: 'title_' + char.id, name: 'Steward Baron' };
-      char.stewardship = 17 + Math.floor(Math.random() * 5);
+      char.stewardship = 17 + Math.floor(getRand(rng) * 5);
       char.ambition = 'WEALTH';
       char.traits = [TRAIT_DEFINITIONS['GREEDY'], TRAIT_DEFINITIONS['DILIGENT']].filter(Boolean);
       char.opinion = { 'player': -10 };
@@ -304,8 +311,8 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'VASSAL_XENOPHOBIC_BARON':
       char.title = { id: 'title_' + char.id, name: 'Warden Baron' };
-      char.martial = 14 + Math.floor(Math.random() * 4);
-      char.intrigue = 11 + Math.floor(Math.random() * 4);
+      char.martial = 14 + Math.floor(getRand(rng) * 4);
+      char.intrigue = 11 + Math.floor(getRand(rng) * 4);
       char.ambition = 'POWER';
       char.traits = [TRAIT_DEFINITIONS['PARANOID'], TRAIT_DEFINITIONS['SHY']].filter(Boolean);
       char.opinion = { 'player': -15 };
@@ -314,8 +321,8 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'VASSAL_COWARD_LORD':
       char.title = { id: 'title_' + char.id, name: 'Coward Baron' };
-      char.martial = 3 + Math.floor(Math.random() * 4); // cowardly stats
-      char.stewardship = 12 + Math.floor(Math.random() * 5);
+      char.martial = 3 + Math.floor(getRand(rng) * 4); // cowardly stats
+      char.stewardship = 12 + Math.floor(getRand(rng) * 5);
       char.ambition = 'FREEDOM';
       char.traits = [TRAIT_DEFINITIONS['CRAVEN'], TRAIT_DEFINITIONS['LAZY']].filter(Boolean);
       char.opinion = { 'player': 0 };
@@ -324,7 +331,7 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'VASSAL_BELOVED_LOCAL':
       char.title = { id: 'title_' + char.id, name: 'Peasants Sovereign' };
-      char.diplomacy = 16 + Math.floor(Math.random() * 5);
+      char.diplomacy = 16 + Math.floor(getRand(rng) * 5);
       char.ambition = 'FREEDOM';
       char.traits = [TRAIT_DEFINITIONS['KIND'], TRAIT_DEFINITIONS['HUMBLE']].filter(Boolean);
       char.opinion = { 'player': 25 };
@@ -333,7 +340,7 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'VASSAL_SCHEMER':
       char.title = { id: 'title_' + char.id, name: 'Baron Schemer' };
-      char.intrigue = 17 + Math.floor(Math.random() * 5);
+      char.intrigue = 17 + Math.floor(getRand(rng) * 5);
       char.ambition = 'POWER';
       char.traits = [TRAIT_DEFINITIONS['DECEITFUL'], TRAIT_DEFINITIONS['AMBITIOUS']].filter(Boolean);
       char.opinion = { 'player': -5 };
@@ -342,8 +349,8 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'VASSAL_DRUNKARD':
       char.title = { id: 'title_' + char.id, name: 'Merry Baron' };
-      char.diplomacy = 11 + Math.floor(Math.random() * 5);
-      char.stewardship = 4 + Math.floor(Math.random() * 5); // mismanaged stewardship
+      char.diplomacy = 11 + Math.floor(getRand(rng) * 5);
+      char.stewardship = 4 + Math.floor(getRand(rng) * 5); // mismanaged stewardship
       char.ambition = 'FREEDOM';
       char.traits = [TRAIT_DEFINITIONS['TRUSTING'], TRAIT_DEFINITIONS['LAZY']].filter(Boolean);
       char.opinion = { 'player': 30 }; // highly friendly but variable
@@ -353,40 +360,40 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
     // ----------------- HEIRS & FAMILY -----------------
     case 'FAMILY_SPOUSE':
       char.title = { id: 'title_' + char.id, name: 'Sovereign Consort' };
-      char.diplomacy = 12 + Math.floor(Math.random() * 5);
-      char.stewardship = 11 + Math.floor(Math.random() * 5);
+      char.diplomacy = 12 + Math.floor(getRand(rng) * 5);
+      char.stewardship = 11 + Math.floor(getRand(rng) * 5);
       char.ambition = 'LEGACY';
       char.traits = [TRAIT_DEFINITIONS['KIND'], TRAIT_DEFINITIONS['TEMPERATE']].filter(Boolean);
       break;
 
     case 'FAMILY_HEIR':
       char.title = { id: 'title_' + char.id, name: 'Prince Heir' };
-      char.age = 10 + Math.floor(Math.random() * 8); // Young heir
-      char.diplomacy = 8 + Math.floor(Math.random() * 5);
-      char.martial = 8 + Math.floor(Math.random() * 5);
+      char.age = 10 + Math.floor(getRand(rng) * 8); // Young heir
+      char.diplomacy = 8 + Math.floor(getRand(rng) * 5);
+      char.martial = 8 + Math.floor(getRand(rng) * 5);
       char.ambition = 'LEGACY';
       char.traits = [TRAIT_DEFINITIONS['QUICK'], TRAIT_DEFINITIONS['HONEST']].filter(Boolean);
       break;
 
     case 'FAMILY_CHILD':
       char.title = { id: 'title_' + char.id, name: 'Dynastic Infant' };
-      char.age = 1 + Math.floor(Math.random() * 12);
+      char.age = 1 + Math.floor(getRand(rng) * 12);
       char.ambition = 'LEGACY';
-      char.traits = getRandomTraits(2);
+      char.traits = getRandomTraits(2, [], rng);
       break;
 
     case 'FAMILY_SIBLING':
       char.title = { id: 'title_' + char.id, name: 'Marquis Cousin' };
-      char.age = char.age || (20 + Math.floor(Math.random() * 15));
+      char.age = char.age || (20 + Math.floor(getRand(rng) * 15));
       char.ambition = 'POWER';
-      char.traits = getRandomTraits(2);
+      char.traits = getRandomTraits(2, [], rng);
       break;
 
     // ----------------- CLERGY -----------------
     case 'CLERGY_HIGH_PRIEST':
       char.title = { id: 'title_' + char.id, name: 'High Priest Pope' };
-      char.learning = 16 + Math.floor(Math.random() * 4);
-      char.diplomacy = 14 + Math.floor(Math.random() * 4);
+      char.learning = 16 + Math.floor(getRand(rng) * 4);
+      char.diplomacy = 14 + Math.floor(getRand(rng) * 4);
       char.piety = 400;
       char.ambition = 'PIETY';
       char.traits = [TRAIT_DEFINITIONS['ZEALOUS'], TRAIT_DEFINITIONS['PROUD']].filter(Boolean);
@@ -395,7 +402,7 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'CLERGY_BISHOP':
       char.title = { id: 'title_' + char.id, name: 'Local Bishop' };
-      char.learning = 12 + Math.floor(Math.random() * 6);
+      char.learning = 12 + Math.floor(getRand(rng) * 6);
       char.piety = 150;
       char.ambition = 'PIETY';
       char.traits = [TRAIT_DEFINITIONS['ZEALOUS'], TRAIT_DEFINITIONS['SCHOLAR']].filter(Boolean);
@@ -403,7 +410,7 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'CLERGY_MONK':
       char.title = { id: 'title_' + char.id, name: 'Wandering Hermit Monk' };
-      char.learning = 13 + Math.floor(Math.random() * 5);
+      char.learning = 13 + Math.floor(getRand(rng) * 5);
       char.piety = 250;
       char.ambition = 'FREEDOM';
       char.traits = [TRAIT_DEFINITIONS['MYSTIC'], TRAIT_DEFINITIONS['HUMBLE']].filter(Boolean);
@@ -412,8 +419,8 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
     // ----------------- MERCHANTS -----------------
     case 'MERCHANT_GUILD_MASTER':
       char.title = { id: 'title_' + char.id, name: 'Guild Master' };
-      char.stewardship = 15 + Math.floor(Math.random() * 5);
-      char.diplomacy = 11 + Math.floor(Math.random() * 4);
+      char.stewardship = 15 + Math.floor(getRand(rng) * 5);
+      char.diplomacy = 11 + Math.floor(getRand(rng) * 4);
       char.ambition = 'WEALTH';
       char.goldHoldings = 1000;
       char.traits = [TRAIT_DEFINITIONS['GREEDY'], TRAIT_DEFINITIONS['DILIGENT']].filter(Boolean);
@@ -421,7 +428,7 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'MERCHANT_BANKER':
       char.title = { id: 'title_' + char.id, name: 'Master Banker Lenders' };
-      char.stewardship = 18 + Math.floor(Math.random() * 2);
+      char.stewardship = 18 + Math.floor(getRand(rng) * 2);
       char.ambition = 'WEALTH';
       char.goldHoldings = 8000;
       char.traits = [TRAIT_DEFINITIONS['PATIENT'], TRAIT_DEFINITIONS['GREEDY']].filter(Boolean);
@@ -429,7 +436,7 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'MERCHANT_MASTER':
       char.title = { id: 'title_' + char.id, name: 'Master Merchant' };
-      char.stewardship = 14 + Math.floor(Math.random() * 5);
+      char.stewardship = 14 + Math.floor(getRand(rng) * 5);
       char.goldHoldings = 1200;
       char.traits = [TRAIT_DEFINITIONS['GREEDY'], TRAIT_DEFINITIONS['TRUSTING']].filter(Boolean);
       break;
@@ -437,14 +444,14 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
     // ----------------- MILITARY -----------------
     case 'MILITARY_GENERAL':
       char.title = { id: 'title_' + char.id, name: 'General' };
-      char.martial = 15 + Math.floor(Math.random() * 5);
+      char.martial = 15 + Math.floor(getRand(rng) * 5);
       char.ambition = 'POWER';
       char.traits = [TRAIT_DEFINITIONS['BRAVE'], TRAIT_DEFINITIONS['AMBITIOUS']].filter(Boolean);
       break;
 
     case 'MILITARY_MERCENARY_CAPTAIN':
       char.title = { id: 'title_' + char.id, name: 'Mercenary Captain' };
-      char.martial = 16 + Math.floor(Math.random() * 4);
+      char.martial = 16 + Math.floor(getRand(rng) * 4);
       char.ambition = 'WEALTH';
       char.goldHoldings = 2500;
       char.traits = [TRAIT_DEFINITIONS['BRAVE'], TRAIT_DEFINITIONS['ARBITRARY']].filter(Boolean);
@@ -452,8 +459,8 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'MILITARY_BANDIT_CHIEF':
       char.title = { id: 'title_' + char.id, name: 'Forest Outlaw Chief' };
-      char.martial = 13 + Math.floor(Math.random() * 5);
-      char.intrigue = 14 + Math.floor(Math.random() * 4);
+      char.martial = 13 + Math.floor(getRand(rng) * 5);
+      char.intrigue = 14 + Math.floor(getRand(rng) * 4);
       char.ambition = 'FREEDOM';
       char.traits = [TRAIT_DEFINITIONS['AGILE'], TRAIT_DEFINITIONS['DECEITFUL']].filter(Boolean);
       break;
@@ -461,7 +468,7 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
     // ----------------- PEASANTS OR EMERGENCE -----------------
     case 'PEASANT_BLACKSMITH':
       char.title = { id: 'title_' + char.id, name: 'Grudging Smith' };
-      char.martial = 14 + Math.floor(Math.random() * 4);
+      char.martial = 14 + Math.floor(getRand(rng) * 4);
       char.ambition = 'FREEDOM';
       char.traits = [TRAIT_DEFINITIONS['WRATHFUL'], TRAIT_DEFINITIONS['DILIGENT']].filter(Boolean);
       char.memories = [{ id: 'mem_' + char.id + '_rebel', description: 'Rebelled because castle knights requisitioned entire harvest crops.', tick: 0 }];
@@ -469,8 +476,8 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'PEASANT_SURVIVOR_FACTION_LEADER':
       char.title = { id: 'title_' + char.id, name: 'Survivor Faction Leader' };
-      char.intrigue = 13 + Math.floor(Math.random() * 5);
-      char.diplomacy = 12 + Math.floor(Math.random() * 4);
+      char.intrigue = 13 + Math.floor(getRand(rng) * 5);
+      char.diplomacy = 12 + Math.floor(getRand(rng) * 4);
       char.ambition = 'REVENGE';
       char.traits = [TRAIT_DEFINITIONS['PARANOID'], TRAIT_DEFINITIONS['PATIENT']].filter(Boolean);
       char.memories = [{ id: 'mem_' + char.id + '_survive', description: 'Survived a catastrophic village raid and emerged as a resistance cell organizer.', tick: 0 }];
@@ -478,15 +485,15 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'PEASANT_PLAGUE_DOCTOR':
       char.title = { id: 'title_' + char.id, name: 'Plague Doctor' };
-      char.learning = 13 + Math.floor(Math.random() * 4);
-      char.intrigue = 12 + Math.floor(Math.random() * 4);
+      char.learning = 13 + Math.floor(getRand(rng) * 4);
+      char.intrigue = 12 + Math.floor(getRand(rng) * 4);
       char.traits = [TRAIT_DEFINITIONS['SCHOLAR'], TRAIT_DEFINITIONS['PATIENT']].filter(Boolean);
       break;
 
     case 'PEASANT_FOLK_HERO':
       char.title = { id: 'title_' + char.id, name: 'Folk Outlaw Hero' };
-      char.martial = 15 + Math.floor(Math.random() * 4);
-      char.diplomacy = 14 + Math.floor(Math.random() * 4);
+      char.martial = 15 + Math.floor(getRand(rng) * 4);
+      char.diplomacy = 14 + Math.floor(getRand(rng) * 4);
       char.ambition = 'FREEDOM';
       char.traits = [TRAIT_DEFINITIONS['BRAVE'], TRAIT_DEFINITIONS['KIND']].filter(Boolean);
       char.memories = [{ id: 'mem_' + char.id + '_hero', description: 'Stole food reserves from local royal storehouses to alleviate field famine.', tick: 0 }];
@@ -494,7 +501,7 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'PEASANT_PROPHET':
       char.title = { id: 'title_' + char.id, name: 'Forest Prophet' };
-      char.learning = 11 + Math.floor(Math.random() * 4);
+      char.learning = 11 + Math.floor(getRand(rng) * 4);
       char.piety = 180;
       char.ambition = 'FREEDOM';
       char.traits = [TRAIT_DEFINITIONS['MYSTIC'], TRAIT_DEFINITIONS['ZEALOUS']].filter(Boolean);
@@ -503,19 +510,19 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
     // ----------------- SPECIAL TRIGGERED EVENTS -----------------
     case 'SPECIAL_WANDERING_KNIGHT':
       char.title = { id: 'title_' + char.id, name: 'Wandery Knight' };
-      char.martial = 14 + Math.floor(Math.random() * 5);
+      char.martial = 14 + Math.floor(getRand(rng) * 5);
       char.traits = [TRAIT_DEFINITIONS['BRAVE'], TRAIT_DEFINITIONS['KIND']].filter(Boolean);
       break;
 
     case 'SPECIAL_FOREIGN_AMBASSADOR':
       char.title = { id: 'title_' + char.id, name: 'Envoy Ambassador' };
-      char.diplomacy = 14 + Math.floor(Math.random() * 5);
+      char.diplomacy = 14 + Math.floor(getRand(rng) * 5);
       char.traits = [TRAIT_DEFINITIONS['HONEST'], TRAIT_DEFINITIONS['TRUSTING']].filter(Boolean);
       break;
 
     case 'SPECIAL_PILGRIM_ARMY':
       char.title = { id: 'title_' + char.id, name: 'Pilgrim Army Commander' };
-      char.martial = 12 + Math.floor(Math.random() * 4);
+      char.martial = 12 + Math.floor(getRand(rng) * 4);
       char.piety = 220;
       char.traits = [TRAIT_DEFINITIONS['ZEALOUS'], TRAIT_DEFINITIONS['CRUEL']].filter(Boolean);
       char.memories = [{ id: 'mem_' + char.id + '_pilgrim', description: 'Demands right of free passage and provisions across the realm at swords point.', tick: 0 }];
@@ -523,8 +530,8 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'SPECIAL_EXILED_HEIR':
       char.title = { id: 'title_' + char.id, name: 'Exiled Kingdom Heir' };
-      char.diplomacy = 13 + Math.floor(Math.random() * 5);
-      char.intrigue = 15 + Math.floor(Math.random() * 4);
+      char.diplomacy = 13 + Math.floor(getRand(rng) * 5);
+      char.intrigue = 15 + Math.floor(getRand(rng) * 4);
       char.ambition = 'REVENGE';
       char.traits = [TRAIT_DEFINITIONS['AMBITIOUS'], TRAIT_DEFINITIONS['DECEITFUL']].filter(Boolean);
       char.memories = [{ id: 'mem_' + char.id + '_exile', description: 'Seeks armed shelter, safe sanctuary, and military support to reclaim their native provinces.', tick: 0 }];
@@ -532,14 +539,14 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     case 'SPECIAL_COURT_JESTER':
       char.title = { id: 'title_' + char.id, name: 'Court Jester Bard' };
-      char.intrigue = 15 + Math.floor(Math.random() * 4);
-      char.diplomacy = 12 + Math.floor(Math.random() * 4);
+      char.intrigue = 15 + Math.floor(getRand(rng) * 4);
+      char.diplomacy = 12 + Math.floor(getRand(rng) * 4);
       char.traits = [TRAIT_DEFINITIONS['QUICK'], TRAIT_DEFINITIONS['DECEITFUL']].filter(Boolean);
       break;
 
     case 'SPECIAL_PLAGUE_CARRIER':
       char.title = { id: 'title_' + char.id, name: 'Diseased Traveler' };
-      char.learning = 4 + Math.floor(Math.random() * 4);
+      char.learning = 4 + Math.floor(getRand(rng) * 4);
       char.health = 40; // High sickness/plague vector
       char.traits = [TRAIT_DEFINITIONS['SLOW'], TRAIT_DEFINITIONS['SHY']].filter(Boolean);
       char.memories = [{ id: 'mem_' + char.id + '_pest', description: 'Triggers catastrophic epidemic spreads if not quickly caught or isolated.', tick: 0 }];
@@ -547,24 +554,79 @@ export function generateDynamicNPC(roleType: string, overrides: Partial<Characte
 
     default:
       // Fallback
-      char.traits = getRandomTraits(2);
+      char.traits = getRandomTraits(2, [], rng);
       break;
   }
 
-  // Ensure stats fall within standard 1-20 limits (or slightly higher based on trait modifiers)
-  char.diplomacy = Math.max(1, Math.min(25, char.diplomacy));
-  char.martial = Math.max(1, Math.min(25, char.martial));
-  char.stewardship = Math.max(1, Math.min(25, char.stewardship));
-  char.intrigue = Math.max(1, Math.min(25, char.intrigue));
-  char.learning = Math.max(1, Math.min(25, char.learning));
+  // Setup base stats initially before recalculating
+  char.baseDiplomacy = char.diplomacy;
+  char.baseMartial = char.martial;
+  char.baseStewardship = char.stewardship;
+  char.baseIntrigue = char.intrigue;
+  char.baseLearning = char.learning;
+  char.basePiety = char.piety;
+
+  recalculateCharacterStats(char);
 
   // Populate random baseline opinion of the player
   if (!char.opinion) char.opinion = {};
   if (roleType.toUpperCase().startsWith('FOREIGN_')) {
-    char.opinion['player'] = -50 + Math.floor(Math.random() * 80); // between -50 and +30
+    char.opinion['player'] = -50 + Math.floor(getRand(rng) * 80); // between -50 and +30
   } else if (!char.isPlayer) {
-    char.opinion['player'] = -15 + Math.floor(Math.random() * 50); // between -15 and +35
+    char.opinion['player'] = -15 + Math.floor(getRand(rng) * 50); // between -15 and +35
+  }
+
+  // Phase 1: Attach probabilistic state vectors for target archetypes
+  const rT = roleType.toUpperCase();
+  if (rT === 'SPECIAL_WANDERING_KNIGHT') {
+    char.stateVector = createDefaultNpcState('WANDERING_KNIGHT', char.birthProvinceId);
+  } else if (rT === 'CLERGY_MONK') {
+    char.stateVector = createDefaultNpcState('MONK', char.birthProvinceId);
+  } else if (rT === 'MILITARY_BANDIT_CHIEF') {
+    char.stateVector = createDefaultNpcState('BANDIT_CHIEF', char.birthProvinceId);
+  } else if (rT === 'MERCHANT_MASTER') {
+    char.stateVector = createDefaultNpcState('MASTER_MERCHANT', char.birthProvinceId);
+  } else if (rT === 'MILITARY_MERCENARY_CAPTAIN') {
+    char.stateVector = createDefaultNpcState('MERCENARY_CAPTAIN', char.birthProvinceId);
+  } else if (rT === 'PEASANT_COHORT') { // Assuming this might be used later or added to loop manually
+    char.stateVector = createDefaultNpcState('PEASANT_COHORT', char.birthProvinceId);
   }
 
   return char;
+}
+
+export function recalculateCharacterStats(char: Character) {
+  if (char.baseDiplomacy === undefined) char.baseDiplomacy = char.diplomacy;
+  if (char.baseMartial === undefined) char.baseMartial = char.martial;
+  if (char.baseStewardship === undefined) char.baseStewardship = char.stewardship;
+  if (char.baseIntrigue === undefined) char.baseIntrigue = char.intrigue;
+  if (char.baseLearning === undefined) char.baseLearning = char.learning;
+  if (char.basePiety === undefined) char.basePiety = char.piety;
+
+  let d = char.baseDiplomacy || 10;
+  let m = char.baseMartial || 10;
+  let s = char.baseStewardship || 10;
+  let i = char.baseIntrigue || 10;
+  let l = char.baseLearning || 10;
+  let p = char.basePiety || 50;
+
+  if (char.traits) {
+    for (const t of char.traits) {
+      if (t.statModifiers) {
+        if (t.statModifiers.diplomacy) d += t.statModifiers.diplomacy;
+        if (t.statModifiers.martial) m += t.statModifiers.martial;
+        if (t.statModifiers.stewardship) s += t.statModifiers.stewardship;
+        if (t.statModifiers.intrigue) i += t.statModifiers.intrigue;
+        if (t.statModifiers.learning) l += t.statModifiers.learning;
+        if (t.statModifiers.piety) p += t.statModifiers.piety;
+      }
+    }
+  }
+
+  char.diplomacy = Math.max(1, Math.min(25, d));
+  char.martial = Math.max(1, Math.min(25, m));
+  char.stewardship = Math.max(1, Math.min(25, s));
+  char.intrigue = Math.max(1, Math.min(25, i));
+  char.learning = Math.max(1, Math.min(25, l));
+  char.piety = Math.max(0, p);
 }

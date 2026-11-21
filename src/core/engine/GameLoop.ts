@@ -16,7 +16,16 @@ import { DiseaseSystem } from '../systems/DiseaseSystem';
 import { WeatherSystem } from '../systems/WeatherSystem';
 import { IntelligenceSystem } from '../systems/IntelligenceSystem';
 import { AureliaWorldSimulation } from '../systems/AureliaWorldSimulation';
+import { NpcAISystem } from '../systems/NpcAISystem';
 import { generateDynamicNPC } from '../utils/npcGenerator';
+import { EventFactory } from '../factories/EventFactory';
+import { getEraForYear } from '../../data/historical-eras';
+import { getActiveLaw } from '../../data/law-catalogue';
+
+import { NPCFeedbackLoopSystem } from '../systems/NPCFeedbackLoopSystem';
+import { EnvironmentSystem } from '../environment/index';
+import { getInitialEnvironmentEntities } from '../environment/data/EnvironmentEntityRegistry';
+import { EnvironmentEntity, Tier2State, Tier3State, Tier4State } from '../environment/models/EnvironmentTypes';
 
 import staticWorld from '../../data/static-world.json';
 import { Province } from '../models/Province';
@@ -34,29 +43,14 @@ import { ChronicleEntry, ChronicleType } from '../../types';
 import { BUILDING_TYPES } from '../../data/building-types';
 import { TECHNOLOGIES } from '../../data/technology-tree';
 
-class EventSystem {
-  constructor(private engine: GameLoop) {}
-  tick() {
-    if (this.engine.clock.currentDay % 15 === 0 && this.engine.rng.next() < 0.3) {
-      const texts = [
-        "A comet was seen in the sky over Kareth.",
-        "Merchants report bandits on the eastern roads.",
-        "A minor noble requests audience at the capital.",
-        "Foreign emissaries arrived from across the sea.",
-        "Unusual weather damages local crops in Sarn.",
-        "A mysterious wanderer tells tales of an old god.",
-      ];
-      const text = texts[Math.floor(this.engine.rng.next() * texts.length)];
-      this.engine.alertSystem.queueAlert(text, 'FLAVOR');
-    }
-  }
-}
-
 export class ChronicleSystem { 
   entries: ChronicleEntry[] = [];
   tick() {} 
   add(year: number, day: number, text: string, type: ChronicleType = 'NORMAL') {
     this.entries.push({ id: nanoid(), year, day, text, type });
+    if (this.entries.length > 1000) {
+      this.entries.shift();
+    }
   }
 }
 
@@ -81,6 +75,8 @@ export class GameLoop {
   rng: RandomSeed;
   eventBus: EventBus;
   scheduler: TickScheduler;
+  environmentSystem: EnvironmentSystem;
+  environmentEntities: EnvironmentEntity<Tier2State | Tier3State | Tier4State>[] = [];
 
   // Custom Resource and Technology state
   resources = {
@@ -89,6 +85,7 @@ export class GameLoop {
     wood: 2100,
     stone: 400,
     manpower: 1200,
+    goods: {} as Record<string, number>,
   };
   unlockedTechs: string[] = ['crop_rotation'];
   activeResearch: {
@@ -96,6 +93,12 @@ export class GameLoop {
     daysLeft: number;
     totalDays: number;
   } | null = null;
+
+  treasuryHistory: number[] = [];
+  taxPolicy: 'LIGHT' | 'MODERATE' | 'HEAVY' = 'MODERATE';
+  militiaDraftLevel: 'VOLUNTARY' | 'CONSCRIPT' | 'TOTAL_WAR' = 'VOLUNTARY';
+  crownAuthorityLevel: 'WEAK' | 'MEDIUM' | 'STRONG' = 'MEDIUM';
+  tradePolicy: 'MERCANTILE' | 'FREE_TRADE' = 'MERCANTILE';
 
   provinces: Record<string, Province> = {};
   armies: Record<string, Army> = {};
@@ -107,8 +110,15 @@ export class GameLoop {
   plots: Record<string, Plot> = {};
   religions: Record<string, Religion> = {};
   treaties: Record<string, Treaty> = {};
+  marriages: Record<string, any> = {};
   treasury: TreasuryState;
   convoys: Record<string, Convoy> = {};
+  pendingEvents: any[] = [];
+  holyWars: any[] = [];
+  tradeRoutes: Record<string, any> = {};
+
+  // Persistent bandit gang entities keyed by province id
+  banditGangs: Record<string, { provinceId: string; strength: number; name: string; }> = {};
 
   // Systems
   worldSystem: WorldSystem;
@@ -122,10 +132,12 @@ export class GameLoop {
   diseaseSystem: DiseaseSystem;
   weatherSystem: WeatherSystem;
   intelligenceSystem: IntelligenceSystem;
-  eventSystem: EventSystem;
+  eventFactory: EventFactory;
   chronicleSystem: ChronicleSystem;
   alertSystem: AlertSystem;
   aureliaSim: AureliaWorldSimulation;
+  npcAISystem: NpcAISystem;
+  npcFeedbackLoopSystem: NPCFeedbackLoopSystem;
 
   constructor(seed: number) {
     this.clock = new WorldClock(1142, 250);
@@ -138,6 +150,14 @@ export class GameLoop {
     // Initial chronicle
     this.chronicleSystem.add(1142, 248, "The Grand Host marches on Valedor.", "URGENT");
     this.chronicleSystem.add(1142, 250, "Your realm stands ready.", "FLAVOR");
+    this.holyWars = [{
+      id: 'holywar_sunspire',
+      name: 'Crusade for the Sunspire Marches',
+      targetProvinceId: 'prov_4',
+      faith: 'Catholic',
+      progress: 18,
+      pledgedArmyIds: []
+    }];
 
     // Initialize state
     const AURELIA_REALMS = [
@@ -752,13 +772,52 @@ export class GameLoop {
     this.politicsSystem = new PoliticsSystem(this);
     this.diseaseSystem = new DiseaseSystem(this);
     this.weatherSystem = new WeatherSystem(this);
+    this.banditGangs = {};
     this.intelligenceSystem = new IntelligenceSystem(this);
-    this.eventSystem = new EventSystem(this);
+    this.eventFactory = new EventFactory(
+      this.clock,
+      this.rng,
+      () => this.characters,
+      () => this.provinces
+    );
+    this.npcFeedbackLoopSystem = new NPCFeedbackLoopSystem(this);
     this.initializeAllNPCs();
     this.aureliaSim = new AureliaWorldSimulation(this);
+
+    // Initialize 1 Peasant Cohort NPC per settlement
+    for (const pId in this.aureliaSim.settlementHierarchies) {
+      const settlements = this.aureliaSim.settlementHierarchies[pId];
+      if (settlements) {
+        for (const s of settlements) {
+          const npcId = `cohort_${s.id}`;
+          const cohort = generateDynamicNPC('PEASANT_COHORT', {
+            id: npcId,
+            firstName: s.name,
+            lastName: 'Cohort',
+            birthProvinceId: pId,
+            landedProvinceIds: [pId]
+          }, this.rng);
+          
+          if (cohort.stateVector) {
+            cohort.stateVector.settlementId = s.id;
+          }
+          this.characters[npcId] = cohort;
+        }
+      }
+    }
+
+    this.npcAISystem = new NpcAISystem(this);
+    this.npcAISystem.bootstrap();
+
+    this.environmentSystem = new EnvironmentSystem(this);
+    this.environmentEntities = getInitialEnvironmentEntities();
+    this.environmentSystem.initialize();
   }
 
   tick() {
+    this.treasuryHistory.push(this.treasury.goldBalance);
+    if (this.treasuryHistory.length > 30) this.treasuryHistory.shift();
+    
     this.clock.advance();
     this.weatherSystem.tick();
     this.worldSystem.tick();
@@ -771,10 +830,33 @@ export class GameLoop {
     this.diplomacySystem.tick();
     this.politicsSystem.tick();
     this.religionSystem.tick();
-    this.eventSystem.tick();
+    // Ticking the event factory daily for random events
+    if (this.clock.currentDay % 15 === 0) {
+      const stability = Object.values(this.provinces)
+        .filter(p => p.ownerId === 'player')
+        .reduce((sum, p) => sum + p.loyalty, 0) / 
+        (Object.values(this.provinces).filter(p => p.ownerId === 'player').length || 1);
+        
+      const newEvent = this.eventFactory.generateRandomEvent(stability);
+      if (newEvent) {
+        this.pendingEvents.push(newEvent);
+        this.alertSystem.queueAlert(`New Event: ${newEvent.title}`, 'URGENT');
+      }
+    }
     this.chronicleSystem.tick();
     this.alertSystem.flush();
+    if (this.npcAISystem) this.npcAISystem.tick();
+    if (this.npcFeedbackLoopSystem) this.npcFeedbackLoopSystem.tick();
     if (this.aureliaSim) this.aureliaSim.tick();
+
+    // Environment System Tiered Ticks
+    if (this.clock.currentDay % 5 === 0) this.environmentSystem.tickTier1();
+    if (this.clock.currentDay % 15 === 0) {
+      this.environmentSystem.tickTier2();
+      this.environmentSystem.tickFeedbackLoops();
+    }
+    if (this.clock.currentDay % 30 === 0) this.environmentSystem.tickTier3();
+    if (this.clock.currentDay % 90 === 0) this.environmentSystem.tickTier4();
 
     // 1. Process active building construction queues across all provinces
     Object.values(this.provinces).forEach(prov => {
@@ -790,6 +872,10 @@ export class GameLoop {
             level: 1,
             condition: 100
           } as any);
+
+          if (currentProject.typeId === 'WALLS' || currentProject.typeId === 'CASTLE_KEEP') {
+            prov.fortificationLevel = Math.min(5, (prov.fortificationLevel || 0) + 1);
+          }
 
           const bType = BUILDING_TYPES[currentProject.typeId];
           if (bType) {
@@ -924,14 +1010,62 @@ export class GameLoop {
         wood: Math.floor(this.resources.wood),
         stone: Math.floor(this.resources.stone),
         manpower: Math.floor(this.resources.manpower),
-        prestige: 150 + Math.floor(this.dynasties['dyn_player']?.renown || 0)
+        prestige: 150 + Math.floor(this.dynasties['dyn_player']?.renown || 0),
+        goods: this.resources.goods,
       },
       activeResearch: this.activeResearch,
       unlockedTechs: this.unlockedTechs,
       convoys: this.convoys,
+      pendingEvents: this.pendingEvents,
+      holyWars: this.holyWars,
+      tradeRoutes: this.tradeRoutes,
       aureliaSimState: this.aureliaSim ? this.aureliaSim.getState() : null,
-      chronicle: this.chronicleSystem.entries.slice(-50) // keep last 50 for UI
+      chronicle: this.chronicleSystem.entries.slice(-50), // keep last 50 for UI
+      environmentEntities: this.environmentEntities,
+      treasuryHistory: this.treasuryHistory,
+      taxPolicy: this.taxPolicy,
+      militiaDraftLevel: this.militiaDraftLevel,
+      crownAuthorityLevel: this.crownAuthorityLevel,
+      tradePolicy: this.tradePolicy,
+      banditGangs: this.banditGangs
     };
+  }
+
+  private findProvinceByCoord(coord: { q: number; r: number }) {
+    return Object.values(this.provinces).find((prov) => prov.coords.q === coord.q && prov.coords.r === coord.r);
+  }
+
+  private buildArmyPath(start: { q: number; r: number; s: number }, destination: { q: number; r: number; s: number }) {
+    const distance = Math.max(
+      Math.abs(start.q - destination.q),
+      Math.abs(start.r - destination.r),
+      Math.abs(start.s - destination.s)
+    );
+
+    if (distance <= 0) return [];
+
+    const path: { q: number; r: number; s: number }[] = [];
+    for (let i = 1; i <= distance; i++) {
+      const t = i / distance;
+      let q = Math.round(start.q + (destination.q - start.q) * t);
+      let r = Math.round(start.r + (destination.r - start.r) * t);
+      let s = Math.round(start.s + (destination.s - start.s) * t);
+
+      const qDiff = Math.abs(q - (start.q + (destination.q - start.q) * t));
+      const rDiff = Math.abs(r - (start.r + (destination.r - start.r) * t));
+      const sDiff = Math.abs(s - (start.s + (destination.s - start.s) * t));
+
+      if (qDiff > rDiff && qDiff > sDiff) q = -r - s;
+      else if (rDiff > sDiff) r = -q - s;
+      else s = -q - r;
+
+      const province = this.findProvinceByCoord({ q, r });
+      if (province && !path.some((step) => step.q === province.coords.q && step.r === province.coords.r)) {
+        path.push(province.coords);
+      }
+    }
+
+    return path;
   }
 
   initializeCustomGame(options: any) {
@@ -2689,6 +2823,9 @@ export class GameLoop {
     if (snapshot.religions) this.religions = snapshot.religions;
     if (snapshot.treaties) this.treaties = snapshot.treaties;
     if (snapshot.convoys) this.convoys = snapshot.convoys;
+    if (snapshot.pendingEvents) this.pendingEvents = snapshot.pendingEvents;
+    if (snapshot.holyWars) this.holyWars = snapshot.holyWars;
+    if (snapshot.tradeRoutes) this.tradeRoutes = snapshot.tradeRoutes;
 
     // Restore tech
     if (snapshot.unlockedTechs) this.unlockedTechs = snapshot.unlockedTechs;
@@ -2710,13 +2847,149 @@ export class GameLoop {
         }
         break;
       }
+      case 'ENVIRONMENT_INTERVENTION': {
+        const { actionType, provinceId, cost } = action.payload;
+        if (this.treasury.goldBalance >= cost) {
+          this.treasury.goldBalance -= cost;
+          if (this.environmentSystem && this.environmentSystem.npcBridge) {
+            this.environmentSystem.npcBridge.applyNPCAction({ action: actionType, provinceId, actorId: 'player' });
+            this.alertSystem.queueAlert(`Sovereign Edict executed in ${this.provinces[provinceId]?.name || 'a province'}.`, 'URGENT');
+          }
+        }
+        break;
+      }
       case 'LOAD_GAME_SAVE': {
         this.loadGameSnapshot(action.payload);
         break;
       }
+      case 'RESOLVE_EVENT': {
+        const { eventId, choiceIndex } = action.payload;
+        const event = this.pendingEvents.find((e) => e.id === eventId);
+        const choice = event?.choices?.[choiceIndex];
+        if (event && choice) {
+          const player = Object.values(this.characters).find(c => c.isPlayer);
+          if (choice.action === 'SPEND_GOLD') {
+            this.treasury.goldBalance = Math.max(0, this.treasury.goldBalance - (choice.amount || 0));
+          } else if (choice.action === 'GAIN_GOLD') {
+            this.treasury.goldBalance += choice.amount || 0;
+          } else if (choice.action === 'GAIN_PRESTIGE') {
+            const playerDynasty = this.dynasties['dyn_player'];
+            if (playerDynasty) playerDynasty.renown += choice.amount || 0;
+          } else if (choice.action === 'LOSE_PRESTIGE') {
+            const playerDynasty = this.dynasties['dyn_player'];
+            if (playerDynasty) playerDynasty.renown = Math.max(0, playerDynasty.renown - (choice.amount || 0));
+          } else if (choice.action === 'GAIN_PIETY') {
+            if (player) player.piety += choice.amount || 0;
+          } else if (choice.action === 'LOSE_PIETY') {
+            if (player) player.piety = Math.max(0, player.piety - (choice.amount || 0));
+          } else if (choice.action === 'EXECUTE_CHARACTER') {
+            if (event.characterId) {
+              const char = this.characters[event.characterId];
+              if (char) {
+                char.isAlive = false;
+                char.causeOfDeath = "Executed by order of the Sovereign";
+                char.deathDate = this.clock.currentDay;
+              }
+            }
+          }
+
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `${event.title}: ${choice.label}. ${choice.effect || ''}`.trim(),
+            event.type === 'DEATH' ? 'URGENT' : 'NORMAL'
+          );
+          this.pendingEvents = this.pendingEvents.filter((e) => e.id !== eventId);
+        }
+        break;
+      }
+      case 'APPEASE_FACTION': {
+        const { factionId } = action.payload;
+        const faction = this.factions[factionId];
+        if (faction && this.treasury.goldBalance >= 200) {
+          this.treasury.goldBalance -= 200;
+          faction.strength = Math.max(0, faction.strength - 15);
+          faction.treasuryFunding += 200;
+          faction.hasPlayerDiscovered = true;
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `The crown appeased ${faction.name} with subsidies and privileges. Their factional strength waned.`,
+            'NORMAL'
+          );
+        }
+        break;
+      }
+      case 'PROPOSE_TREATY': {
+        const { type, targetRulerCharId } = action.payload;
+        const target = this.characters[targetRulerCharId];
+        if (target) {
+          const treatyId = 'treaty_' + nanoid();
+          this.treaties[treatyId] = {
+            id: treatyId,
+            type,
+            parties: ['player', targetRulerCharId],
+            signedDate: this.clock.currentDay,
+            expiryDate: this.clock.currentDay + 365,
+            terms: [],
+            isActive: true,
+            isViolated: false,
+            violatorId: null
+          } as any;
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `Envoys proposed a ${type.replace(/_/g, ' ').toLowerCase()} treaty with ${target.firstName} ${target.lastName}.`,
+            'NORMAL'
+          );
+        }
+        break;
+      }
+      case 'PLEDGE_CRUSADE': {
+        const { holyWarId, armyId } = action.payload;
+        const holyWar = this.holyWars.find((war) => war.id === holyWarId);
+        if (holyWar) {
+          holyWar.pledgedArmyIds = Array.from(new Set([...(holyWar.pledgedArmyIds || []), armyId].filter(Boolean)));
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `The crown pledged troops to ${holyWar.name}.`,
+            'URGENT'
+          );
+        }
+        break;
+      }
+      case 'ESTABLISH_TRADE_ROUTE': {
+        const { originId, destinationId } = action.payload;
+        const origin = this.provinces[originId];
+        const destination = this.provinces[destinationId];
+        if (origin && destination && this.treasury.goldBalance >= 100) {
+          this.treasury.goldBalance -= 100;
+          const routeId = 'route_' + nanoid();
+          this.tradeRoutes[routeId] = {
+            id: routeId,
+            originId,
+            destinationId,
+            good: origin.resources?.[0]?.good || 'GRAIN',
+            volumePerMonth: 80,
+            profitPerMonth: 45,
+            riskLevel: Math.max(5, 35 - Math.floor(((origin.roadQuality || 0) + (destination.roadQuality || 0)) / 8)),
+            status: 'ACTIVE',
+            convoysInTransit: [],
+            isRoyal: true
+          };
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `A permanent trade route was established between ${origin.name} and ${destination.name}.`,
+            'NORMAL'
+          );
+        }
+        break;
+      }
       case 'GENERATE_NPC': {
         const { roleType, overrides } = action.payload;
-        const npc = generateDynamicNPC(roleType, overrides || {});
+        const npc = generateDynamicNPC(roleType, overrides || {}, this.rng);
         this.characters[npc.id] = npc;
         
         // Log this event in the chronicle
@@ -2748,6 +3021,43 @@ export class GameLoop {
         if (province) {
           const capitalProv = this.provinces['prov_1'] || Object.values(this.provinces).find(p => p.ownerId === 'player');
           if (capitalProv && capitalProv.id !== province.id) {
+            // Ensure origin province has a stockpile object
+            if (!province.stockpiles) {
+              province.stockpiles = { food: 0, wood: 0, stone: 0, iron: 0, goods: {} };
+            }
+
+            const requested = {
+              food: food || 40,
+              wood: wood || 30,
+              stone: stone || 20,
+              iron: iron || 15
+            };
+
+            // Check if origin province can actually supply these resources
+            const canFulfill =
+              province.stockpiles.food >= requested.food &&
+              province.stockpiles.wood >= requested.wood &&
+              province.stockpiles.stone >= requested.stone &&
+              province.stockpiles.iron >= requested.iron;
+
+            if (!canFulfill) {
+              this.alertSystem.queueAlert(
+                `Cannot dispatch convoy from ${province.name}: insufficient stockpile. ` +
+                `Needs ${requested.food} food (have ${Math.floor(province.stockpiles.food)}), ` +
+                `${requested.wood} wood (have ${Math.floor(province.stockpiles.wood)}), ` +
+                `${requested.stone} stone (have ${Math.floor(province.stockpiles.stone)}), ` +
+                `${requested.iron} iron (have ${Math.floor(province.stockpiles.iron)}).`,
+                'URGENT'
+              );
+              break;
+            }
+
+            // Deduct from origin province stockpile
+            province.stockpiles.food  -= requested.food;
+            province.stockpiles.wood  -= requested.wood;
+            province.stockpiles.stone -= requested.stone;
+            province.stockpiles.iron  -= requested.iron;
+
             const destinationCoords = capitalProv.coords;
             const dist = Math.max(1, Math.floor(Math.sqrt((province.coords.q - destinationCoords.q)**2 + (province.coords.r - destinationCoords.r)**2)));
             const routePath: any[] = [];
@@ -2760,23 +3070,16 @@ export class GameLoop {
               });
             }
 
-            const cargo = {
-              food: food || 40,
-              wood: wood || 30,
-              stone: stone || 20,
-              iron: iron || 15
-            };
-
             const convoyId = 'convoy_' + nanoid();
             const newConvoy = {
               id: convoyId,
               tradeRouteId: null,
               militaryArmyId: null,
               cargo: {
-                GRAIN: cargo.food,
-                TIMBER: cargo.wood,
-                STONE: cargo.stone,
-                IRON_INGOTS: cargo.iron,
+                GRAIN: requested.food,
+                TIMBER: requested.wood,
+                STONE: requested.stone,
+                IRON_INGOTS: requested.iron,
               },
               origin: province.coords,
               destination: destinationCoords,
@@ -2786,7 +3089,7 @@ export class GameLoop {
               speed: 1,
               isRaided: false,
               raidedByArmyId: null,
-              rawCargo: cargo,
+              rawCargo: requested,
               progressIndex: 0,
               originProvinceName: province.name,
               status: 'ACTIVE',
@@ -2812,37 +3115,6 @@ export class GameLoop {
           text,
           type || 'NORMAL'
         );
-        break;
-      }
-      case 'IMPRISON_CHARACTER': {
-        const { charId } = action.payload;
-        const c = this.characters[charId];
-        if (c) {
-          if (!c.opinion) c.opinion = {};
-          c.opinion['player'] = Math.max(-100, (c.opinion['player'] || 0) - 30);
-          c.title = { id: 'imprisoned', name: 'Prisoner' };
-          this.chronicleSystem.add(
-            this.clock.currentYear,
-            this.clock.currentDay,
-            `${c.firstName} ${c.lastName} has been arrested and cast into the dungeons.`,
-            'URGENT'
-          );
-        }
-        break;
-      }
-      case 'BANISH_CHARACTER': {
-        const { charId } = action.payload;
-        const b = this.characters[charId];
-        if (b) {
-          b.isAlive = false;
-          b.causeOfDeath = 'Exile';
-          this.chronicleSystem.add(
-            this.clock.currentYear,
-            this.clock.currentDay,
-            `${b.firstName} ${b.lastName} has been banished and stripped of all titles.`,
-            'NORMAL'
-          );
-        }
         break;
       }
       case 'BURN_FOREST': {
@@ -3032,9 +3304,14 @@ export class GameLoop {
       case 'RAISE_LEVY': {
         const { provinceId } = action.payload;
         const prov = this.provinces[provinceId];
-        if (prov && prov.population.serfs > 600) {
-          prov.population.serfs -= 500;
-          prov.population.total -= 500;
+        
+        const conscriptionLaw = getActiveLaw(this, 'CONSCRIPTION');
+        const levyMultiplier = conscriptionLaw.effects.levySizeMultiplier ?? 1.0;
+        const targetDraft = Math.floor(500 * levyMultiplier);
+
+        if (prov && prov.population.serfs > targetDraft + 100) {
+          prov.population.serfs -= targetDraft;
+          prov.population.total -= targetDraft;
           
           const season = this.clock.currentSeason;
           const isFamineRisk = season === 'SPRING' || season === 'AUTUMN';
@@ -3068,13 +3345,13 @@ export class GameLoop {
           if (existingArmy) {
             const spearUnit = existingArmy.units.find(u => u.type === 'LEVY_SPEARMEN');
             if (spearUnit) {
-              spearUnit.count += 500;
+              spearUnit.count += targetDraft;
             } else {
               existingArmy.units.push({
                 id: 'unit_spear_reinforce_' + nanoid(),
                 type: 'LEVY_SPEARMEN' as any,
-                count: 500,
-                maxCount: 500,
+                count: targetDraft,
+                maxCount: targetDraft,
                 strength: 100,
                 morale: 60,
                 experience: 0,
@@ -3100,8 +3377,8 @@ export class GameLoop {
                 {
                   id: 'unit_spear_' + armyId,
                   type: 'LEVY_SPEARMEN' as any,
-                  count: 500,
-                  maxCount: 500,
+                  count: targetDraft,
+                  maxCount: targetDraft,
                   strength: 100,
                   morale: 60,
                   experience: 0,
@@ -3138,11 +3415,120 @@ export class GameLoop {
         }
         break;
       }
+      case 'CALL_VASSAL_BANNERS': {
+        const { provinceId } = action.payload;
+        const prov = this.provinces[provinceId];
+        if (!prov || !prov.vassalCount || prov.vassalCount <= 0) break;
+
+        const messengerCost = prov.vassalCount * 50;
+        if (this.treasury.goldBalance < messengerCost) {
+          this.alertSystem.queueAlert(`Insufficient gold to dispatch banner riders. Need ${messengerCost} Gold.`, 'URGENT');
+          break;
+        }
+        this.treasury.goldBalance -= messengerCost;
+
+        // Each vassal contributes 500 troops, scaled by province loyalty (loyalty tax)
+        const loyaltyMod = Math.max(0.3, Math.min(1.0, (prov.loyalty ?? 60) / 100));
+        const troopsPerVassal = Math.floor(500 * loyaltyMod);
+        const totalTroops = troopsPerVassal * prov.vassalCount;
+
+        // Merge into the province's existing player army or create one
+        const existingArmy = Object.values(this.armies).find(a =>
+          a.realmId === 'realm_1' &&
+          a.location.q === prov.coords.q &&
+          a.location.r === prov.coords.r
+        );
+
+        if (existingArmy) {
+          const spearUnit = existingArmy.units.find(u => u.type === 'LEVY_SPEARMEN');
+          if (spearUnit) {
+            spearUnit.count += totalTroops;
+            spearUnit.maxCount = Math.max(spearUnit.maxCount, spearUnit.count);
+          } else {
+            existingArmy.units.push({
+              id: 'unit_vassal_' + nanoid(),
+              type: 'LEVY_SPEARMEN' as any,
+              count: totalTroops,
+              maxCount: totalTroops,
+              strength: 100,
+              morale: 55,
+              experience: 5,
+              equipmentQuality: 25,
+              supplyConsumed: 1,
+              upkeepCost: 1,
+              formation: 'STANDARD',
+              isMounted: false,
+              isRanged: false,
+              hasArmor: 'NONE' as any,
+              specialAbility: null
+            });
+          }
+        } else {
+          const armyId = 'army_vassal_' + prov.id + '_' + this.clock.currentDay;
+          this.armies[armyId] = {
+            id: armyId,
+            name: `${prov.name} Vassal Host`,
+            realmId: 'realm_1',
+            commanderId: 'player',
+            officerIds: [],
+            units: [{
+              id: 'unit_vassal_' + armyId,
+              type: 'LEVY_SPEARMEN' as any,
+              count: totalTroops,
+              maxCount: totalTroops,
+              strength: 100,
+              morale: 55,
+              experience: 5,
+              equipmentQuality: 25,
+              supplyConsumed: 1,
+              upkeepCost: 1,
+              formation: 'STANDARD',
+              isMounted: false,
+              isRanged: false,
+              hasArmor: 'NONE' as any,
+              specialAbility: null
+            }],
+            location: prov.coords,
+            destination: null,
+            path: [],
+            movementPoints: 50,
+            supplyLevel: 90,
+            supplyConvoyId: null,
+            morale: 55,
+            discipline: 35,
+            experience: 5,
+            stance: 'DEFEND',
+            orders: [],
+            pendingOrders: [],
+            isExhausted: false,
+            frostbiteRisk: 0,
+            diseases: [],
+            deserterRate: 0,
+            loot: 0,
+            attritionDays: 0
+          };
+        }
+
+        this.chronicleSystem.add(
+          this.clock.currentYear,
+          this.clock.currentDay,
+          `War horns sounded across ${prov.name}. ${prov.vassalCount} sworn vassal lord(s) answered the banners, mustering ${totalTroops} feudal levies${loyaltyMod < 0.7 ? ' (reduced due to low vassal loyalty)' : ''}.`,
+          'NORMAL'
+        );
+        this.alertSystem.queueAlert(`${totalTroops} vassal levies mustered at ${prov.name}.`, 'NORMAL');
+        break;
+      }
       case 'CONSTRUCT_BUILDING': {
         const { provinceId, typeId } = action.payload;
         const prov = this.provinces[provinceId];
         const bType = BUILDING_TYPES[typeId];
         if (prov && bType) {
+          const reqTech = Object.values(TECHNOLOGIES).find(t => t.unlockedBuildings?.includes(bType.id));
+          if (reqTech && !this.unlockedTechs.includes(reqTech.id)) {
+            this.alertSystem.queueAlert(`Cannot construct ${bType.name}: Requires ${reqTech.name} technology.`, 'URGENT');
+            break;
+          }
+
           if (this.treasury.goldBalance >= bType.cost.gold &&
               this.resources.wood >= bType.cost.wood &&
               this.resources.stone >= bType.cost.stone &&
@@ -3251,7 +3637,7 @@ export class GameLoop {
           } else if (type.includes('ARCHER') || type.includes('LONGBOWMEN') || type.includes('CROSSBOWMEN')) {
             goldCost = 100;
             manpowerCost = 120;
-          } else if (type.includes('SIEGE') || type.includes('TREBUCHET') || type.includes('MANGONEL')) {
+          } else if (type.includes('SIEGE') || type.includes('TREBUCHET') || type.includes('MANGONEL') || type.includes('BATTERING_RAM')) {
             goldCost = 450;
             manpowerCost = 100;
           }
@@ -3260,10 +3646,18 @@ export class GameLoop {
             this.treasury.goldBalance -= goldCost;
             this.resources.manpower -= manpowerCost;
 
+            const prov = Object.values(this.provinces).find(p => p.coords.q === army.location.q && p.coords.r === army.location.r);
+            let eqQuality = 50;
+            if (prov && prov.buildings) {
+              if (prov.buildings.some((b: any) => b.typeId === 'ARMORY')) eqQuality += 20;
+              if (prov.buildings.some((b: any) => b.typeId === 'SMELTER')) eqQuality += 10;
+            }
+
             const existingUnit = army.units.find(u => u.type === type);
             if (existingUnit) {
               existingUnit.count += count;
               existingUnit.maxCount = Math.max(existingUnit.maxCount, existingUnit.count);
+              existingUnit.equipmentQuality = Math.max(existingUnit.equipmentQuality, eqQuality);
             } else {
               army.units.push({
                 id: 'unit_' + nanoid(),
@@ -3273,7 +3667,7 @@ export class GameLoop {
                 strength: 100,
                 morale: 80,
                 experience: 10,
-                equipmentQuality: 75,
+                equipmentQuality: eqQuality,
                 supplyConsumed: type.includes('CAVALRY') ? 2 : 1,
                 upkeepCost: type.includes('CAVALRY') ? 3 : 1,
                 formation: 'STANDARD',
@@ -3332,7 +3726,66 @@ export class GameLoop {
                 'NORMAL'
               );
             }
+          } else if (actionType === 'SWAY') {
+            if (this.treasury.goldBalance >= 150) {
+              this.treasury.goldBalance -= 150;
+              const increase = Math.floor(this.rng.next() * 15) + 10;
+              if (!target.opinion) target.opinion = {};
+              target.opinion['player'] = Math.min(100, (target.opinion['player'] || 0) + increase);
+              this.chronicleSystem.add(
+                this.clock.currentYear,
+                this.clock.currentDay,
+                `Sent an embassy to sway ${target.firstName} ${target.lastName}. Opinion raised by +${increase}.`,
+                'NORMAL'
+              );
+            }
           }
+        }
+        break;
+      }
+      case 'IMPRISON_CHARACTER': {
+        const { charId } = action.payload;
+        const target = this.characters[charId];
+        if (target && this.treasury.goldBalance >= 100) {
+          this.treasury.goldBalance -= 100;
+          if (!target.opinion) target.opinion = {};
+          const currentOpinion = target.opinion['player'] || 0;
+          const baseSuccessChance = Math.max(10, Math.min(95, 50 - currentOpinion));
+          const roll = this.rng.next() * 100;
+
+          if (roll <= baseSuccessChance) {
+            target.opinion['player'] = Math.max(-100, target.opinion['player'] - 30);
+            this.chronicleSystem.add(
+              this.clock.currentYear,
+              this.clock.currentDay,
+              `Successfully imprisoned ${target.firstName} ${target.lastName} in the dungeons!`,
+              'NORMAL'
+            );
+          } else {
+            target.opinion['player'] = Math.max(-100, target.opinion['player'] - 40);
+            this.chronicleSystem.add(
+              this.clock.currentYear,
+              this.clock.currentDay,
+              `Attempted to arrest ${target.firstName} ${target.lastName} but the target fled!`,
+              'NORMAL'
+            );
+          }
+        }
+        break;
+      }
+      case 'BANISH_CHARACTER': {
+        const { charId } = action.payload;
+        const target = this.characters[charId];
+        if (target && this.treasury.goldBalance >= 200) {
+          this.treasury.goldBalance -= 200;
+          if (!target.opinion) target.opinion = {};
+          target.opinion['player'] = -100;
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `Banished ${target.firstName} ${target.lastName} from the realm! estates reclaimed.`,
+            'NORMAL'
+          );
         }
         break;
       }
@@ -3386,6 +3839,520 @@ export class GameLoop {
               'NORMAL'
             );
           }
+        }
+        break;
+      }
+      case 'FORM_MARRIAGE': {
+        const { char1Id, char2Id } = action.payload;
+        const c1 = this.characters[char1Id];
+        const c2 = this.characters[char2Id];
+        if (c1 && c2) {
+          c1.spouseId = c2.id;
+          c2.spouseId = c1.id;
+          if (!c1.opinion) c1.opinion = {};
+          if (!c2.opinion) c2.opinion = {};
+          c1.opinion['player'] = Math.min(100, (c1.opinion['player'] || 0) + 40);
+          c2.opinion['player'] = Math.min(100, (c2.opinion['player'] || 0) + 40);
+          
+          const marriageId = 'marriage_' + nanoid();
+          this.marriages[marriageId] = {
+            id: marriageId,
+            spouseAId: c1.id,
+            spouseBId: c2.id,
+            dynastyAId: c1.dynastyId || '',
+            dynastyBId: c2.dynastyId || '',
+            politicalPurpose: 'ALLIANCE',
+            dowryGold: 100,
+            dowryProvinces: [],
+            casus_belli_unlocked: [],
+            isSecret: false,
+            date: this.clock.currentDay
+          };
+
+          const treatyId = 'treaty_' + nanoid();
+          this.treaties[treatyId] = {
+            id: treatyId,
+            type: 'ALLIANCE',
+            parties: [c1.id, c2.id],
+            signedDate: this.clock.currentDay,
+            expiryDate: this.clock.currentDay + (365 * 10), // 10 years alliance
+            terms: [{ description: `Marriage Alliance between ${c1.firstName} and ${c2.firstName}` }],
+            isActive: true,
+            isViolated: false,
+            violatorId: null
+          } as any;
+
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `A grand marriage was formed between ${c1.firstName} and ${c2.firstName}, uniting their houses in alliance.`,
+            'URGENT'
+          );
+        }
+        break;
+      }
+      case 'SET_HEIR_EDUCATION': {
+        const { charId, focus } = action.payload;
+        const heir = this.characters[charId];
+        if (heir) {
+          (heir as any).educationFocus = focus;
+          if (focus === 'CHIVALRIC') {
+            heir.martial = (heir.martial || 0) + 2;
+          } else if (focus === 'SCHOLARLY') {
+            heir.learning = (heir.learning || 0) + 2;
+          }
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `${heir.firstName} has been assigned a ${focus.toLowerCase()} tutor, ensuring their royal education.`,
+            'NORMAL'
+          );
+        }
+        break;
+      }
+      case 'REQUEST_EXCOMMUNICATION': {
+        const { charId } = action.payload;
+        const target = this.characters[charId];
+        if (target) {
+          (target as any).excommunicated = true;
+          if (!target.opinion) target.opinion = {};
+          target.opinion['player'] = -100;
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `The Holy See has excommunicated ${target.firstName} ${target.lastName}! Their soul is condemned and their rule illegitimate.`,
+            'CRITICAL'
+          );
+        }
+        break;
+      }
+      case 'PILLAGE_GRANARIES': {
+        const { provinceId } = action.payload;
+        const prov = this.provinces[provinceId];
+        if (prov) {
+          this.resources.food += 600;
+          prov.loyalty = Math.max(0, prov.loyalty - 35);
+          prov.population.mood = 'ANGRY';
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `Brutal scorched-earth orders: Granaries in ${prov.name} were pillaged by the host (+600 Food). The local peasants are furious!`,
+            'CRITICAL'
+          );
+        }
+        break;
+      }
+      case 'SALT_PROVINCE': {
+        const { provinceId } = action.payload;
+        const prov = this.provinces[provinceId];
+        if (prov) {
+          prov.salted = true;
+          prov.fertility = 0;
+          prov.loyalty = Math.max(0, prov.loyalty - 50);
+          prov.population.mood = 'ANGRY';
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `Unspeakable devastation! The fields of ${prov.name} have been salted, ruining the harvest forever.`,
+            'CRITICAL'
+          );
+        }
+        break;
+      }
+      case 'BUY_RESOURCE': {
+        const { resource, amount, goldCost } = action.payload;
+        if (this.treasury.goldBalance >= goldCost) {
+          this.treasury.goldBalance -= goldCost;
+          (this.resources as any)[resource] += amount;
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `Merchants imported ${amount} ${resource} for ${goldCost} gold.`,
+            'NORMAL'
+          );
+        }
+        break;
+      }
+      case 'SELL_RESOURCE': {
+        const { resource, amount, goldGain } = action.payload;
+        if ((this.resources as any)[resource] >= amount) {
+          (this.resources as any)[resource] -= amount;
+          this.treasury.goldBalance += goldGain;
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `Crown monopolies sold ${amount} ${resource}, securing ${goldGain} gold.`,
+            'NORMAL'
+          );
+        }
+        break;
+      }
+      case 'SET_TRADE_POLICY': {
+        this.tradePolicy = action.payload.policy;
+        this.chronicleSystem.add(
+          this.clock.currentYear,
+          this.clock.currentDay,
+          `The Sovereign proclaimed a new economic doctrine: ${this.tradePolicy.replace('_', ' ')}.`,
+          'URGENT'
+        );
+        break;
+      }
+      case 'SET_TAX_POLICY': {
+        this.taxPolicy = action.payload.bracketId;
+        this.chronicleSystem.add(
+          this.clock.currentYear,
+          this.clock.currentDay,
+          `The Exchequer decreed a ${this.taxPolicy.toLowerCase()} tax policy across the realm.`,
+          'URGENT'
+        );
+        break;
+      }
+      case 'SET_MILITIA_DRAFT': {
+        this.militiaDraftLevel = action.payload.level;
+        this.chronicleSystem.add(
+          this.clock.currentYear,
+          this.clock.currentDay,
+          `The Lord Marshal enacted a ${this.militiaDraftLevel.toLowerCase()} conscription law.`,
+          'URGENT'
+        );
+        break;
+      }
+      case 'SET_CROWN_AUTHORITY': {
+        this.crownAuthorityLevel = action.payload.level;
+        this.chronicleSystem.add(
+          this.clock.currentYear,
+          this.clock.currentDay,
+          `The Sovereign has moved to assert ${this.crownAuthorityLevel.toLowerCase()} crown authority over the noble estates.`,
+          'URGENT'
+        );
+        break;
+      }
+      case 'GRANT_ESTATE_PRIVILEGE': {
+        const { estateType, privilegeId } = action.payload;
+        const estateFactionType: Record<string, string> = {
+          CLERGY: 'RELIGIOUS',
+          NOBILITY: 'NOBLE_RIGHTS',
+          MERCHANT: 'MERCANTILE'
+        };
+        const faction = Object.values(this.factions).find(f => f.type === (estateFactionType[estateType] || estateType));
+        if (faction) {
+          faction.strength = Math.max(0, faction.strength - 10);
+          faction.treasuryFunding += 50;
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `Granted the ${privilegeId} privilege to the ${faction.name}. Their agitation weakened as royal funding increased.`,
+            'NORMAL'
+          );
+        }
+        break;
+      }
+      case 'DISTRIBUTE_GRAIN': {
+        const { provinceId } = action.payload;
+        const prov = this.provinces[provinceId];
+        if (prov && this.resources.food >= 200) {
+          this.resources.food -= 200;
+          prov.loyalty = Math.min(100, prov.loyalty + 15);
+          prov.population.mood = 'CONTENT';
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `The Crown opened the granaries, distributing wheat to the hungry peasants of ${prov.name}.`,
+            'NORMAL'
+          );
+        }
+        break;
+      }
+      case 'VAULT_HEIST': {
+        const { targetId, cost } = action.payload;
+        if (this.treasury.goldBalance >= cost) {
+          this.treasury.goldBalance -= cost;
+          const roll = this.rng.next();
+          if (roll < 0.6) {
+            const stolen = Math.floor(this.rng.next() * 300) + 200;
+            this.treasury.goldBalance += stolen;
+            this.chronicleSystem.add(
+              this.clock.currentYear,
+              this.clock.currentDay,
+              `Masterful heist! Our infiltrators cracked the enemy vault and secured ${stolen} gold!`,
+              'URGENT'
+            );
+          } else {
+            this.chronicleSystem.add(
+              this.clock.currentYear,
+              this.clock.currentDay,
+              `The heist was foiled! Our agents barely escaped with their lives.`,
+              'NORMAL'
+            );
+          }
+        }
+        break;
+      }
+      case 'PEASANT_DISSATISFACTION': {
+        const { targetId, cost } = action.payload;
+        if (this.treasury.goldBalance >= cost) {
+          this.treasury.goldBalance -= cost;
+          const enemyProvs = Object.values(this.provinces).filter(p => p.ownerId !== 'player' && p.realmId !== 'realm_1');
+          if (enemyProvs.length > 0) {
+            const targetProv = enemyProvs[Math.floor(this.rng.next() * enemyProvs.length)];
+            targetProv.loyalty = Math.max(0, targetProv.loyalty - 20);
+            targetProv.population.mood = 'ANGRY';
+            this.chronicleSystem.add(
+              this.clock.currentYear,
+              this.clock.currentDay,
+              `Spies successfully sowed rumors of tyranny in ${targetProv.name}, plummeting local loyalty.`,
+              'URGENT'
+            );
+          }
+        }
+        break;
+      }
+      case 'REINFORCE_ARMY': {
+        // Restores morale and resupply for a player army after dispatching reinforcements
+        const { armyId } = action.payload;
+        const army = this.armies[armyId];
+        if (army && army.realmId === 'realm_1') {
+          const moraleGain = Math.floor(this.rng.next() * 15) + 10; // +10..+25
+          army.morale = Math.min(100, (army.morale || 50) + moraleGain);
+          army.supplyLevel = Math.min(100, (army.supplyLevel || 50) + 20);
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `Reinforcements reached ${army.name}. Morale surged by ${moraleGain} points.`,
+            'NORMAL'
+          );
+        }
+        break;
+      }
+      case 'MOVE_ARMY': {
+        const { armyId, destinationQ, destinationR, destinationS } = action.payload;
+        const army = this.armies[armyId];
+        const targetProvince = this.findProvinceByCoord({ q: destinationQ, r: destinationR });
+
+        if (army && targetProvince) {
+          const destination = {
+            q: targetProvince.coords.q,
+            r: targetProvince.coords.r,
+            s: destinationS ?? targetProvince.coords.s
+          };
+          const path = this.buildArmyPath(army.location, destination);
+          army.destination = destination;
+          army.path = path;
+          army.orders = [...(army.orders || []), { type: 'MOVE', targetCoord: destination }];
+
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `${army.name} received marching orders toward ${targetProvince.name}.`,
+            'NORMAL'
+          );
+        }
+        break;
+      }
+      case 'SET_ARMY_STANCE': {
+        const { armyId, stance } = action.payload;
+        const army = this.armies[armyId];
+        const validStances = ['MARCH', 'RAID', 'BESIEGE', 'DEFEND', 'FORAGE'];
+        if (army && validStances.includes(stance)) {
+          army.stance = stance;
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `${army.name} changed stance to ${stance.toLowerCase()}.`,
+            'NORMAL'
+          );
+        }
+        break;
+      }
+      case 'DISBAND_ARMY': {
+        const { armyId } = action.payload;
+        const army = this.armies[armyId];
+        if (army && (army.realmId === 'realm_1' || army.commanderId === 'player')) {
+          const returningManpower = Math.floor((army.units || []).reduce((sum, unit) => sum + (unit.count || 0), 0) * 0.5);
+          this.resources.manpower += returningManpower;
+
+          // Flush any accumulated loot into the treasury before dissolving
+          if ((army.loot || 0) > 0) {
+            const lootAmount = Math.floor(army.loot);
+            this.treasury.goldBalance += lootAmount;
+            this.chronicleSystem.add(
+              this.clock.currentYear,
+              this.clock.currentDay,
+              `${army.name} disbanded — soldiers returned ${lootAmount} gold in campaign plunder to the crown.`,
+              'NORMAL'
+            );
+          }
+
+          delete this.armies[armyId];
+
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `${army.name} was disbanded. ${returningManpower} veterans returned to the manpower pool.`,
+            'NORMAL'
+          );
+        }
+        break;
+      }
+      case 'ASSIGN_COMMANDER': {
+        const { armyId, charId } = action.payload;
+        const army = this.armies[armyId];
+        const commander = this.characters[charId];
+        if (army && commander && commander.isAlive !== false && commander.martial >= 12) {
+          army.commanderId = charId;
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `${commander.firstName} ${commander.lastName} now commands ${army.name}.`,
+            'NORMAL'
+          );
+        }
+        break;
+      }
+      case 'SET_UNIT_FORMATION': {
+        const { armyId, unitId, formation } = action.payload;
+        const army = this.armies[armyId];
+        if (army) {
+          const unit = army.units.find(u => u.id === unitId);
+          if (unit) {
+            unit.formation = formation;
+          }
+        }
+        break;
+      }
+      case 'SPLIT_ARMY': {
+        const { armyId, unitIds } = action.payload;
+        const army = this.armies[armyId];
+        const selectedUnitIds: string[] = Array.isArray(unitIds) ? unitIds : [];
+        if (army && selectedUnitIds.length > 0) {
+          const detachedUnits = (army.units || []).filter((unit) => selectedUnitIds.includes(unit.id));
+          const remainingUnits = (army.units || []).filter((unit) => !selectedUnitIds.includes(unit.id));
+
+          if (detachedUnits.length > 0 && remainingUnits.length > 0) {
+            army.units = remainingUnits;
+            const newArmyId = 'army_split_' + nanoid();
+            this.armies[newArmyId] = {
+              ...army,
+              id: newArmyId,
+              name: `${army.name} Detachment`,
+              units: detachedUnits,
+              destination: null,
+              path: [],
+              orders: [],
+              pendingOrders: []
+            };
+
+            this.chronicleSystem.add(
+              this.clock.currentYear,
+              this.clock.currentDay,
+              `${army.name} split off a mobile detachment under the same banner.`,
+              'NORMAL'
+            );
+          }
+        }
+        break;
+      }
+      case 'SALLY_FORTH': {
+        const { provinceId } = action.payload;
+        const province = this.provinces[provinceId];
+        if (province && province.isBesieged) {
+          const besieger = Object.values(this.armies).find((army) =>
+            army.location.q === province.coords.q &&
+            army.location.r === province.coords.r &&
+            army.realmId !== 'realm_1' &&
+            army.commanderId !== 'player'
+          );
+
+          if (besieger && this.resources.manpower >= 150) {
+            this.resources.manpower -= 150;
+            const sallyArmyId = 'army_sally_' + nanoid();
+            this.armies[sallyArmyId] = {
+              id: sallyArmyId,
+              name: `${province.name} Sally Guard`,
+              realmId: 'realm_1',
+              commanderId: 'player',
+              officerIds: [],
+              units: [{
+                id: 'unit_sally_' + nanoid(),
+                type: 'LEVY_SPEARMEN' as any,
+                count: 150,
+                maxCount: 150,
+                strength: 85,
+                morale: 70,
+                experience: 5,
+                equipmentQuality: 45,
+                supplyConsumed: 1,
+                upkeepCost: 1,
+                formation: 'SHIELD_WALL',
+                isMounted: false,
+                isRanged: false,
+                hasArmor: 'PADDED' as any,
+                specialAbility: null
+              }],
+              location: province.coords,
+              destination: besieger.location,
+              path: [],
+              movementPoints: 100,
+              supplyLevel: 80,
+              supplyConvoyId: null,
+              morale: 70,
+              discipline: 55,
+              experience: 5,
+              stance: 'DEFEND',
+              orders: [{ type: 'ATTACK', targetId: besieger.id }],
+              pendingOrders: [],
+              isExhausted: false,
+              frostbiteRisk: 0,
+              diseases: [],
+              deserterRate: 0,
+              loot: 0,
+              attritionDays: 0
+            };
+
+            this.chronicleSystem.add(
+              this.clock.currentYear,
+              this.clock.currentDay,
+              `The gates of ${province.name} opened as the garrison sallied forth against ${besieger.name}.`,
+              'URGENT'
+            );
+          }
+        }
+        break;
+      }
+      case 'ESCORT_CONVOY': {
+        const { armyId, convoyId } = action.payload;
+        const army = this.armies[armyId];
+        const convoy = this.convoys[convoyId];
+        if (army && convoy) {
+          convoy.escort = armyId;
+          convoy.militaryArmyId = armyId;
+          army.supplyConvoyId = convoyId;
+          army.orders = [...(army.orders || []), { type: 'ESCORT_CONVOY', targetId: convoyId }];
+
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `${army.name} was assigned to escort convoy ${convoyId}.`,
+            'NORMAL'
+          );
+        }
+        break;
+      }
+      case 'INTERCEPT_CONVOY': {
+        const { armyId, convoyId } = action.payload;
+        const army = this.armies[armyId];
+        const convoy = this.convoys[convoyId];
+        if (army && convoy) {
+          army.destination = convoy.currentLocation;
+          army.path = this.buildArmyPath(army.location, convoy.currentLocation);
+          army.orders = [...(army.orders || []), { type: 'INTERCEPT_CONVOY', targetId: convoyId }];
+
+          this.chronicleSystem.add(
+            this.clock.currentYear,
+            this.clock.currentDay,
+            `${army.name} received orders to intercept convoy ${convoyId}.`,
+            'URGENT'
+          );
         }
         break;
       }

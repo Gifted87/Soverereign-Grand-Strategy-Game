@@ -1,6 +1,6 @@
 import { PlotType, PlotStage } from './Treaty'; // Reuse plot stage
 
-export type FactionType = 'INDEPENDENCE' | 'SUCCESSION' | 'RELIGIOUS' | 'NOBLE_RIGHTS' | 'MERCANTILE';
+export type FactionType = 'INDEPENDENCE' | 'SUCCESSION' | 'RELIGIOUS' | 'NOBLE_RIGHTS' | 'MERCANTILE' | 'CLERGY' | 'NOBILITY' | 'MERCHANT';
 
 export interface FactionDemand {
   description: string;
@@ -14,15 +14,17 @@ export interface Faction {
   id: string;
   realmId: string;
   name: string;
-  type: FactionType;          // INDEPENDENCE | SUCCESSION | RELIGIOUS | NOBLE_RIGHTS | MERCANTILE
+  type: FactionType;          // INDEPENDENCE | SUCCESSION | RELIGIOUS | NOBLE_RIGHTS | MERCANTILE | CLERGY | NOBILITY | MERCHANT
   leader: string;             // Character ID
   members: string[];          // Character IDs
   strength: number;           // 0–100 (faction power within realm)
+  loyalty?: number;           // 0–100 faction loyalty to the crown
   demands: FactionDemand[];
   isActive: boolean;
   plotStage: PlotStage;       // FORMING | CONSOLIDATING | DEMANDING | REVOLTING
   treasuryFunding: number;
   hasPlayerDiscovered: boolean;
+  cartographicMemory?: Record<string, any>;
 }
 
 export interface Plot {

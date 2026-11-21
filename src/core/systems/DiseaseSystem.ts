@@ -195,11 +195,21 @@ export class DiseaseSystem {
         const activeDays = currentDay - pDisease.startedAt;
         let localHasMonastery = province.buildings?.some((b: any) => b.typeId === 'MONASTERY');
 
+        const hasPlagueDoctor = Object.values(this.engine.characters).some(c => 
+          c.isAlive && c.title?.name === 'Plague Doctor' && 
+          (c.birthProvinceId === province.id || c.landedProvinceIds?.includes(province.id) || province.realmId === 'realm_1')
+        );
+
         if (activeDays > config.baseDurationDays) {
           pDisease.severity -= localHasMonastery ? 6 : 3; // Monastery infirmaries accelerate disease recovery rate limit
         } else if (localHasMonastery) {
           pDisease.severity -= 1.5; // active healing even during peak infection
           pDisease.infectedCount = Math.max(0, pDisease.infectedCount - Math.floor(pDisease.infectedCount * 0.05)); // 5% therapeutic recovery daily
+        }
+
+        if (hasPlagueDoctor) {
+          pDisease.severity -= 5;
+          pDisease.infectedCount = Math.max(0, pDisease.infectedCount - Math.floor(pDisease.infectedCount * 0.15)); // 15% recovery daily from Doctor
         }
 
         if (pDisease.severity <= 0 || pDisease.infectedCount <= 2 || province.population.total <= 0) {

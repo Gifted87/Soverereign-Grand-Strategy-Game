@@ -1,6 +1,6 @@
 export type TreatyType = 'PEACE' | 'ALLIANCE' | 'VASSALAGE' | 'TRADE' | 'NON_AGGRESSION' | 'MARRIAGE_PACT';
 export type AllianceType = 'DEFENSIVE' | 'OFFENSIVE' | 'HOLY' | 'TRIBUTARY';
-export type PlotType = 'ASSASSINATION' | 'CLAIM_FORGERY' | 'BRIBE' | 'SPY_INFILTRATE' | 'FABRICATE_SCANDAL';
+export type PlotType = 'ASSASSINATION' | 'CLAIM_FORGERY' | 'BRIBE' | 'SPY_INFILTRATE' | 'FABRICATE_SCANDAL' | 'DISCOVER_SECRETS' | 'BLACKMAIL';
 export type PlotStage = 'FORMING' | 'CONSOLIDATING' | 'DEMANDING' | 'REVOLTING';
 
 export interface TreatyTerm {
@@ -16,6 +16,7 @@ export interface Treaty {
   expiryDate: number | null;
   isViolated: boolean;
   violatorId: string | null;
+  isActive?: boolean;
 }
 
 export interface Marriage {

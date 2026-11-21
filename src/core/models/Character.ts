@@ -96,6 +96,13 @@ export interface Character {
   mentorId: string | null;
 
   // Stats
+  baseDiplomacy?: number;
+  baseMartial?: number;
+  baseStewardship?: number;
+  baseIntrigue?: number;
+  baseLearning?: number;
+  basePiety?: number;
+
   diplomacy: number;         // 1–20
   martial: number;           // 1–20
   stewardship: number;       // 1–20
@@ -107,6 +114,8 @@ export interface Character {
   ambition: Ambition;
   opinion: Record<string, number>;   // Character ID → opinion score (-100 to +100)
   suspicion: Record<string, number>; // Character ID → suspicion score
+  intelLevel?: Record<string, number>; // Character ID -> Intel level (0-3)
+  loyaltyToLiege?: number; // 0-100 loyalty to their liege
 
   // Memory System
   memories: Memory[];        // Permanent record of formative events
@@ -117,4 +126,8 @@ export interface Character {
   heldTitles: Title[];
   landedProvinceIds: string[];
   goldHoldings: number;
+  casusBelli?: string[]; // Array of title/province IDs this character has a justified reason to attack
+
+  // Probabilistic NPC AI State
+  stateVector?: import('./NpcStateVector').NpcStateVector;
 }
